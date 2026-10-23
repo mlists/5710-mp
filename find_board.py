@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def detect_chessboard(image_path):
+def detect_chessboard(image_path, display_output=False):
     image = cv2.imread(image_path)
 
     if image is None:
@@ -71,40 +71,41 @@ def detect_chessboard(image_path):
                 col + 0.5, row + 0.5
             )
 
-    # Print pixel coordinates as (x, y).
-    print("Board corners (x, y):")
-    for name, point in zip(
-        ["Top-left", "Top-right", "Bottom-right", "Bottom-left"],
-        board_corners
-    ):
-        print(f"{name}: ({point[0]:.2f}, {point[1]:.2f})")
+    if display_output:
+        # Print pixel coordinates as (x, y).
+        print("Board corners (x, y):")
+        for name, point in zip(
+            ["Top-left", "Top-right", "Bottom-right", "Bottom-left"],
+            board_corners
+        ):
+            print(f"{name}: ({point[0]:.2f}, {point[1]:.2f})")
 
-    print("\nSquare centres (x, y):")
-    for row in range(8):
-        for col in range(8):
-            x, y = square_centres[row, col]
-            print(f"Square [{row}, {col}]: ({x:.2f}, {y:.2f})")
+        print("\nSquare centres (x, y):")
+        for row in range(8):
+            for col in range(8):
+                x, y = square_centres[row, col]
+                print(f"Square [{row}, {col}]: ({x:.2f}, {y:.2f})")
 
-    # Visualise the detected points and board outline.
-    display = image.copy()
+        # Visualise the detected points and board outline.
+        display = image.copy()
 
-    polygon = np.round(board_corners).astype(np.int32)
-    cv2.polylines(display, [polygon], True, (0, 0, 255), 3)
+        polygon = np.round(board_corners).astype(np.int32)
+        cv2.polylines(display, [polygon], True, (0, 0, 255), 3)
 
-    for row in range(8):
-        for col in range(8):
-            x, y = np.round(square_centres[row, col]).astype(int)
-            cv2.circle(display, (x, y), 4, (0, 255, 0), -1)
+        for row in range(8):
+            for col in range(8):
+                x, y = np.round(square_centres[row, col]).astype(int)
+                cv2.circle(display, (x, y), 4, (0, 255, 0), -1)
 
-    for x, y in np.round(board_corners).astype(int):
-        cv2.circle(display, (x, y), 7, (255, 0, 0), -1)
+        for x, y in np.round(board_corners).astype(int):
+            cv2.circle(display, (x, y), 7, (255, 0, 0), -1)
 
-    plt.figure(figsize=(10, 8))
-    plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
-    plt.title("Chessboard corners and square centres")
-    plt.axis("off")
-    plt.tight_layout()
-    plt.show()
+        plt.figure(figsize=(10, 8))
+        plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        plt.title("Chessboard corners and square centres")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
     return square_centres, board_corners
 
