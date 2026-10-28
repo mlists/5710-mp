@@ -90,8 +90,7 @@ def load_image(image_path):
     image = cv2.imread(image_path)
     if image is None:
         raise FileNotFoundError(f"Could not load image: {image_path}")
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return image, gray
+    return image
 
 
 def fit_homography(src, dst, inlier_threshold=DEFAULT_INLIER_THRESHOLD):
@@ -461,7 +460,7 @@ def calculate_board_coordinates(homography):
     return square_centres, board_corners
 
 
-def display_detection(image, square_centres, board_corners):
+def display_detection(image, video_mode, square_centres, board_corners):
     """Draw the detected board boundary, square centres, and outer corners."""
     display = image.copy()
     cv2.polylines(
@@ -480,15 +479,18 @@ def display_detection(image, square_centres, board_corners):
     for x, y in np.round(board_corners).astype(int):
         cv2.circle(display, (x, y), BOARD_CORNER_RADIUS, BOARD_CORNER_COLOR, -1)
 
-    plt.figure(figsize=DISPLAY_FIGURE_SIZE)
-    plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
-    plt.title("Chessboard corners and square centres")
-    plt.axis("off")
-    plt.tight_layout()
-    plt.show()
+    if video_mode:
+        cv2.imshow("Chessboard corners and square centres", display)
+    else:
+        plt.figure(figsize=DISPLAY_FIGURE_SIZE)
+        plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        plt.title("Chessboard corners and square centres")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
 
-def display_corner_debug(image, all_candidates, winning_grid_points, homography):
+def display_corner_debug(image, video_mode, all_candidates, winning_grid_points, homography):
     """Show candidates, matched corners, and all homography-predicted grid intersections."""
     display = image.copy()
     height, width = image.shape[:2]
@@ -520,19 +522,22 @@ def display_corner_debug(image, all_candidates, winning_grid_points, homography)
         if 0 <= x < width and 0 <= y < height:
             cv2.circle(display, (x, y), DEBUG_WINNER_RADIUS, WINNING_GRID_COLOR, 2)
 
-    plt.figure(figsize=DISPLAY_FIGURE_SIZE)
-    plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
-    plt.title("Debug: predicted grid (cyan), candidates (orange), matched points (magenta)")
-    plt.axis("off")
-    plt.tight_layout()
-    plt.show()
+    if video_mode:
+        cv2.imshow("Debug: predicted grid (cyan), candidates (orange), matched points (magenta)", display)
+    else:
+        plt.figure(figsize=DISPLAY_FIGURE_SIZE)
+        plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        plt.title("Debug: predicted grid (cyan), candidates (orange), matched points (magenta)")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
-def detect_chessboard(image_path, display_output=False, inlier_threshold=DEFAULT_INLIER_THRESHOLD, display_debug=False):
+def detect_chessboard(image, video_mode=False, display_output=False, inlier_threshold=DEFAULT_INLIER_THRESHOLD, display_debug=False):
     """
     Detect a chessboard and return its square centres and outer corners.
 
     Args:
-        image_path: Path to the image.
+        image: Colour image to analyse.
         display_output: If True, display the detected board overlay.
         inlier_threshold: Pixel-distance threshold used for robust homography fitting.
         display_debug: If True, display all corner candidates and highlight the winning grid.
@@ -541,7 +546,7 @@ def detect_chessboard(image_path, display_output=False, inlier_threshold=DEFAULT
         square_centres: Array of shape (8, 8, 2), with each point as (x, y).
         board_corners: Array of shape (4, 2), ordered TL, TR, BR, BL.
     """
-    image, gray = load_image(image_path)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Fast path: use OpenCV's standard chessboard detector.
     homography = detect_standard_chessboard(gray, inlier_threshold)
@@ -570,7 +575,7 @@ def detect_chessboard(image_path, display_output=False, inlier_threshold=DEFAULT
     square_centres, board_corners = calculate_board_coordinates(homography)
 
     if display_output:
-        display_detection(image, square_centres, board_corners)
+        display_detection(image, video_mode, square_centres, board_corners)
 
     if display_debug:
         if all_candidates is None:
@@ -583,11 +588,12 @@ def detect_chessboard(image_path, display_output=False, inlier_threshold=DEFAULT
                 projected, all_candidates, inlier_threshold
             )
             winning_grid_points = all_candidates[winning_ids]
-        display_corner_debug(image, all_candidates, winning_grid_points, homography)
+        display_corner_debug(image, video_mode, all_candidates, winning_grid_points, homography)
 
     return square_centres, board_corners
 
 
 if __name__ == "__main__":
     # Note image #5 fails but the image is pretty unreasonable
-    centres, corners = detect_chessboard(r"occluded-photos\9.jpg", display_output=True, display_debug=False)
+    image = load_image(r"occluded-photos\9.jpg")
+    centres, corners = detect_chessboard(image, video_mode=False, display_output=True, display_debug=False)
