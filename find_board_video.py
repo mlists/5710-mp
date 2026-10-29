@@ -12,7 +12,7 @@ while True:
     if not ret:
         break
 
-    result = detect_chessboard(frame, display_output=True)
+    result = detect_chessboard(frame, video_mode=True, display_output=True, display_debug=True)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
