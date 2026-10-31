@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import cv2
 import find_board
@@ -47,7 +48,7 @@ def main():
     source = parse_source(args.source)
     is_video_file = isinstance(source, str)
 
-    K, D = get_pose.load_calibration()  # Read calibration once.
+    K, D = get_pose.load_calibration()
 
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
@@ -55,6 +56,9 @@ def main():
 
     tracker = BoardTracker()
     frame_count = 0
+    previous_frame_time = None
+    smoothed_fps = 0.0
+    fps_smoothing = 0.1
 
     # Use the video's frame rate for approximately real-time playback.
     if is_video_file:
@@ -70,6 +74,23 @@ def main():
                 break
 
             frame_count += 1
+
+            # Measure and smooth the actual processing/display rate.
+            current_frame_time = time.perf_counter()
+            if previous_frame_time is not None:
+                frame_delta = current_frame_time - previous_frame_time
+
+                if frame_delta > 0:
+                    instantaneous_fps = 1.0 / frame_delta
+
+                    if smoothed_fps == 0.0:
+                        smoothed_fps = instantaneous_fps
+                    else:
+                        smoothed_fps = (
+                            fps_smoothing * instantaneous_fps
+                            + (1.0 - fps_smoothing) * smoothed_fps
+                        )
+
             display = frame.copy()
             result = None
             detector_message = ""
@@ -97,6 +118,7 @@ def main():
                         result = tracker.initialize(frame, detection)
 
                     detector_message = "Detector correction"
+
                 except (RuntimeError, ValueError, cv2.error) as exc:
                     detector_message = f"Detection failed: {str(exc)[:45]}"
 
@@ -104,6 +126,7 @@ def main():
             if result is None and tracker.initialised:
                 try:
                     result = tracker.update(frame)
+
                 except (RuntimeError, ValueError, cv2.error) as exc:
                     detector_message = f"Tracking error: {str(exc)[:45]}"
 
@@ -116,6 +139,7 @@ def main():
                         camera_matrix=K,
                         dist_coeffs=D,
                     )
+
                     display = get_pose.draw_pose_overlay(frame, pose)
 
                     label = (
@@ -124,6 +148,7 @@ def main():
                         f"Inliers: {pose['num_inliers']} "
                         f"RMSE: {pose['reprojection_rmse']:.1f}px"
                     )
+
                     cv2.putText(
                         display, label, (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2,
@@ -141,22 +166,46 @@ def main():
                         (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                         (0, 0, 255), 2,
                     )
+
             else:
                 message = (
                     detector_message
                     or "Board unavailable - waiting for detection"
                 )
+
                 cv2.putText(
                     display, message[:65], (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2,
                 )
 
+            # Display FPS in the top-right corner.
+            fps_label = (
+                f"FPS: {smoothed_fps:.1f}"
+                if smoothed_fps > 0
+                else "FPS: --"
+            )
+
+            (text_width, text_height), _ = cv2.getTextSize(
+                fps_label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2
+            )
+
+            fps_x = max(20, display.shape[1] - text_width - 250)
+
+            cv2.putText(
+                display, fps_label, (fps_x, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2,
+                cv2.LINE_AA,
+            )
+
             if args.tracker_debug and result is not None:
                 display = tracker.draw_debug(display, result)
 
             cv2.imshow("Chessboard pose", display)
+
             if cv2.waitKey(wait_ms) & 0xFF == ord("q"):
                 break
+
+            previous_frame_time = current_frame_time
 
     finally:
         cap.release()
