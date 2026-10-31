@@ -1,5 +1,4 @@
 import argparse
-from pathlib import Path
 
 import cv2
 import find_board
@@ -34,6 +33,11 @@ def main():
         "--debug-detection",
         action="store_true",
         help="Show the detector's debug output when it is run.",
+    )
+    parser.add_argument(
+        "--tracker-debug",
+        action="store_true",
+        help="Overlay the tracker's numbered and labeled board corners.",
     )
     args = parser.parse_args()
 
@@ -146,6 +150,9 @@ def main():
                     display, message[:65], (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2,
                 )
+
+            if args.tracker_debug and result is not None:
+                display = tracker.draw_debug(display, result)
 
             cv2.imshow("Chessboard pose", display)
             if cv2.waitKey(wait_ms) & 0xFF == ord("q"):

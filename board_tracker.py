@@ -98,6 +98,7 @@ class BoardTracker:
         self.corner_colours = None
         self.orientation_candidates = ()
         self.detector_rotation = 0
+        self.detector_flip = False
         self.initialised = False
         self.last_tracking_ok = False
 
@@ -182,19 +183,19 @@ class BoardTracker:
         return intensities, labels
 
     @staticmethod
-    def _rotate_detection(square_centres, board_corners, inner, k):
-        """
-        Rotate detector arrays by k quarter-turns counter-clockwise.
+    def _transform_detection(square_centres, board_corners, inner, k, flip):
+        """Apply a k rotations of 90deg and/or flip the axis of the detection."""
+        centres = np.rot90(square_centres, k=k)
+        intersections = np.rot90(inner, k=k)
 
-        The detector's outer-corner array is TL, TR, BR, BL in its own
-        arbitrary grid convention. np.roll(..., -k) keeps it consistent with
-        np.rot90 on the square-centre and inner-intersection arrays.
-        """
-        return (
-            np.rot90(square_centres, k=k).copy(),
-            np.roll(np.asarray(board_corners), -k, axis=0).copy(),
-            np.rot90(inner, k=k).copy(),
-        )
+        corners = np.roll(board_corners, -k, axis=0)
+
+        if flip:
+            centres = np.fliplr(centres)
+            intersections = np.fliplr(intersections)
+            corners = corners[[1, 0, 3, 2]]
+
+        return centres.copy(), corners.copy(), intersections.copy()
 
     def _select_initial_rotation(self, gray, square_centres, board_corners, inner):
         _, labels = self._sample_corner_colours(gray, square_centres)
@@ -216,8 +217,8 @@ class BoardTracker:
         )
         self.detector_rotation = first_rotation
 
-        rotated = self._rotate_detection(
-            square_centres, board_corners, inner, first_rotation
+        rotated = self._transform_detection(
+            square_centres, board_corners, inner, first_rotation, False
         )
         self.corner_colours = labels
         return rotated
@@ -288,25 +289,28 @@ class BoardTracker:
         predicted_corners = self._project_grid(self.homography, _BOUNDARY_COORDS)
         best = None
 
-        for k in range(4):
-            rotated = self._rotate_detection(
-                square_centres, board_corners, inner, k
-            )
-            candidate_centres, candidate_corners, candidate_inner = rotated
-            error = float(
-                np.mean(np.linalg.norm(candidate_corners - predicted_corners, axis=1))
-            )
-            if best is None or error < best[0]:
-                best = (
-                    error,
-                    k,
-                    candidate_centres,
-                    candidate_corners,
-                    candidate_inner,
+        for flip in (False, True):
+            for k in range(4):
+                rotated = self._transform_detection(
+                    square_centres, board_corners, inner, k, flip
                 )
+                candidate_centres, candidate_corners, candidate_inner = rotated
+                error = float(
+                    np.mean(np.linalg.norm(candidate_corners - predicted_corners, axis=1))
+                )
+                if best is None or error < best[0]:
+                    best = (
+                        error,
+                        k,
+                        flip,
+                        candidate_centres,
+                        candidate_corners,
+                        candidate_inner,
+                    )
 
-        _, k, centres, corners, aligned_inner = best
+        _, k, flip, centres, corners, aligned_inner = best
         self.detector_rotation = k
+        self.detector_flip = flip
         self.homography = self._make_homography(corners)
         self._reset_tracked_points(aligned_inner)
         return centres, corners, aligned_inner
@@ -442,6 +446,93 @@ class BoardTracker:
         self.last_tracking_ok = tracking_ok
         return self._make_result(tracking_ok)
 
+    def draw_debug(self, frame, result=None, show_grid=True):
+        """
+        Draw the tracker's board-corner ordering on a copy of the frame.
+
+        Labels describe the tracker's current canonical coordinate convention:
+            0 = TL / A8, 1 = TR / H8,
+            2 = BR / H1, 3 = BL / A1.
+
+        These chess-square labels are only an assumed orientation. On an
+        empty board, a 180-degree ambiguity may remain. The numeric corner
+        indices are the most useful way to diagnose ordering mismatches
+        between the detector, tracker, and pose-estimation code.
+        """
+        if result is None:
+            if not self.initialised:
+                return frame.copy()
+            result = self._make_result(self.last_tracking_ok)
+
+        output = frame.copy()
+        corners = np.asarray(result.board_corners, dtype=np.float32).reshape(4, 2)
+        if not np.isfinite(corners).all():
+            return output
+
+        height, width = output.shape[:2]
+        names = (
+            ("0: TL / A8", "1: TR / H8", "2: BR / H1", "3: BL / A1")
+        )
+
+        if show_grid:
+            polygon = np.round(corners).astype(np.int32).reshape(-1, 1, 2)
+            cv2.polylines(output, [polygon], True, (255, 180, 0), 2, cv2.LINE_AA)
+
+        # Draw the corners with distinct colours so their ordering is obvious.
+        marker_colours = (
+            (0, 0, 255),       # 0: red
+            (0, 255, 0),       # 1: green
+            (255, 0, 0),       # 2: blue
+            (0, 255, 255),     # 3: yellow
+        )
+
+        for index, (point, label, colour) in enumerate(
+            zip(corners, names, marker_colours)
+        ):
+            x, y = np.round(point).astype(int)
+            cv2.circle(output, (x, y), 9, colour, -1, cv2.LINE_AA)
+            cv2.circle(output, (x, y), 13, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Offset labels inward from the corresponding image edge.
+            text_x = int(np.clip(x + (12 if x < width / 2 else -150), 5, max(5, width - 155)))
+            text_y = int(np.clip(y + (25 if y < height / 2 else -12), 22, height - 5))
+
+            cv2.putText(
+                output, label, (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 0, 0), 4, cv2.LINE_AA,
+            )
+            cv2.putText(
+                output, label, (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.58, colour, 2, cv2.LINE_AA,
+            )
+
+            coord_label = f"({x}, {y})"
+            coord_y = min(height - 5, text_y + 20)
+            cv2.putText(
+                output, coord_label, (text_x, coord_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 2, cv2.LINE_AA,
+            )
+            cv2.putText(
+                output, coord_label, (text_x, coord_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (20, 20, 20), 1, cv2.LINE_AA,
+            )
+
+        status = (
+            f"Tracker {'OK' if result.tracking_ok else 'LOST'} | "
+            f"points: {result.tracked_count} | "
+            f"detector rotation: {result.detector_rotation} | "
+            f"possible rotations: {result.orientation_candidates}"
+        )
+        cv2.putText(
+            output, status, (15, height - 15),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 0), 3, cv2.LINE_AA,
+        )
+        cv2.putText(
+            output, status, (15, height - 15),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA,
+        )
+        return output
+
     def reset(self):
         """Clear tracker state so it can be initialised on another board."""
         self.previous_gray = None
@@ -451,5 +542,6 @@ class BoardTracker:
         self.corner_colours = None
         self.orientation_candidates = ()
         self.detector_rotation = 0
+        self.detector_flip = False
         self.initialised = False
         self.last_tracking_ok = False
