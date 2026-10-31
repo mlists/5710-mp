@@ -10,7 +10,7 @@ from urllib.request import urlretrieve
 
 import cv2
 import mediapipe as mp
-from pinch_detector import PinchDetector, THUMB, INDEX, FRAME_WIDTH, FRAME_HEIGHT
+from pinch_detector import PinchDetector, THUMB, INDEX
 
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
 MODEL_FILE = Path(__file__).resolve().parent / "hand_landmarker.task"
@@ -37,15 +37,17 @@ def ensure_model():
     return MODEL_FILE
 
 
-def open_camera(index):
-    camera = cv2.VideoCapture(index, cv2.CAP_DSHOW) if os.name == "nt" else cv2.VideoCapture(index)
-    if not camera.isOpened() and os.name == "nt":
-        camera.release()
-        camera = cv2.VideoCapture(index)
+def open_camera(index, width, height, fps, backend, fourcc):
+    backends = {"auto": cv2.CAP_ANY, "dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF}
+    camera = cv2.VideoCapture(index, backends[backend])
     if not camera.isOpened():
-        raise RuntimeError(f"Cannot open camera {index}. Try --camera 0 or --camera 1.")
-    camera.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+        raise RuntimeError(f"Cannot open camera {index} using {backend}. Try another --camera or --backend.")
+
+    if fourcc != "auto":
+        camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    camera.set(cv2.CAP_PROP_FPS, fps)
     return camera
 
 
@@ -110,7 +112,13 @@ def draw_overlay(frame, gesture, fps, last_event, pinch, release, timing, histor
 
 def main():
     parser = argparse.ArgumentParser(description="Webcam pinch detection and timings")
-    parser.add_argument("--camera", type=int, default=1, help="Webcam index (default: 1)")
+    parser.add_argument("--camera", type=int, default=1, help="Camera index (default: 1)")
+    parser.add_argument("--width", type=int, default=1280, help="Requested capture width (default: 1280)")
+    parser.add_argument("--height", type=int, default=720, help="Requested capture height (default: 720)")
+    parser.add_argument("--fps", type=int, default=30, help="Requested camera FPS (default: 30)")
+    parser.add_argument("--backend", choices=("auto", "dshow", "msmf"), default="dshow" if os.name == "nt" else "auto", help="Camera API (Windows: dshow or msmf)")
+    parser.add_argument("--fourcc", choices=("MJPG", "YUY2", "auto"), default="MJPG", help="Capture format (default: MJPG)")
+    parser.add_argument("--mirror", action="store_true", help="Mirror the displayed and processed frame")
     parser.add_argument("--pinch", type=float, default=0.25, help="Pinch threshold")
     parser.add_argument("--release", type=float, default=0.30, help="Release threshold")
     parser.add_argument("--frames", type=int, default=3, help="Frames required for a state change")
@@ -118,13 +126,15 @@ def main():
     args = parser.parse_args()
     if not 0 < args.pinch < args.release or args.frames < 1:
         parser.error("Require 0 < --pinch < --release and --frames >= 1")
+    if min(args.width, args.height, args.fps) < 1:
+        parser.error("--width, --height and --fps must be positive")
 
     options = mp.tasks.vision.HandLandmarkerOptions(
         base_options=mp.tasks.BaseOptions(model_asset_path=str(ensure_model())),
         running_mode=mp.tasks.vision.RunningMode.VIDEO, num_hands=1,
         min_hand_detection_confidence=0.6, min_hand_presence_confidence=0.5, min_tracking_confidence=0.5)
     detector = PinchDetector(args.pinch, args.release, args.frames)
-    camera = open_camera(args.camera)
+    camera = open_camera(args.camera, args.width, args.height, args.fps, args.backend, args.fourcc)
     history = {key: deque(maxlen=60) for key in TIMING_KEYS}
     start = previous_frame = last_summary = time.monotonic()
     last_timestamp, last_event, event_at, fps, frame_number = -1, "", 0.0, 0.0, 0
@@ -137,19 +147,26 @@ def main():
             writer = csv.DictWriter(csv_file, fieldnames=["frame", "state", "event", "cursor_x", "cursor_y", "event_x", "event_y"] + [f"{key}_ms" for key in TIMING_KEYS])
             writer.writeheader()
 
-        print("Webcam ready. Pinch point is one-third from thumb to index. Press Q or Esc to quit.")
+        print(f"Requested camera {args.camera}: {args.width} x {args.height} at {args.fps} FPS, {args.backend}, {args.fourcc}")
+        print("Pinch point is one-quarter from thumb to index. Press Q or Esc to quit.")
+        reported_size = None
         with mp.tasks.vision.HandLandmarker.create_from_options(options) as model:
             while True:
                 t0 = time.perf_counter()
                 ok, frame = camera.read()
                 t1 = time.perf_counter()
-                if not ok:
+                if not ok or frame is None:
                     print("Cannot read a webcam frame.")
                     break
 
-                if frame.shape[:2] != (FRAME_HEIGHT, FRAME_WIDTH):
-                    frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
-                frame = cv2.flip(frame, 1)
+                height, width = frame.shape[:2]
+                if reported_size != (width, height):
+                    print(f"Actual camera frame: {width} x {height} pixels")
+                    if (width, height) != (args.width, args.height):
+                        print("Requested resolution was not provided by this camera/backend.")
+                    reported_size = (width, height)
+                if args.mirror:
+                    frame = cv2.flip(frame, 1)
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
                 timestamp = max(last_timestamp + 1, int((time.monotonic() - start) * 1000))
@@ -159,7 +176,7 @@ def main():
                 result = model.detect_for_video(image, timestamp)
                 t3 = time.perf_counter()
                 landmarks = result.hand_landmarks[0] if result.hand_landmarks else None
-                gesture = detector.update(landmarks)
+                gesture = detector.update(landmarks, width, height)
                 t4 = time.perf_counter()
 
                 timing = dict(capture=(t1 - t0) * 1000, preprocess=(t2 - t1) * 1000,

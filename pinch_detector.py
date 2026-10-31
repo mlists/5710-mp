@@ -2,7 +2,7 @@
 
 import math
 
-FRAME_WIDTH, FRAME_HEIGHT = 800, 600
+FRAME_WIDTH, FRAME_HEIGHT = 1280, 720
 THUMB, INDEX, WRIST, MIDDLE_BASE, INDEX_BASE, PINKY_BASE = 4, 8, 0, 9, 5, 17
 
 
@@ -11,7 +11,9 @@ def distance(a, b):
 
 
 class PinchDetector:
-    def __init__(self, pinch=0.25, release=0.30, frames=3, lost_frames=30, contact_fraction=1/4):
+    def __init__(self, pinch=0.25, release=0.30, frames=3, lost_frames=6, contact_fraction=1/4):
+        if not 0 < pinch < release or frames < 1 or lost_frames < 1:
+            raise ValueError("Require 0 < pinch < release and positive frame counts")
         if not 0 <= contact_fraction <= 1:
             raise ValueError("Contact fraction must be between 0 and 1")
         self.pinch, self.release, self.frames = pinch, release, frames
@@ -20,7 +22,7 @@ class PinchDetector:
         self.ratio, self.cursor = None, None
         self.release_position = None
 
-    def update(self, landmarks):
+    def update(self, landmarks, width=FRAME_WIDTH, height=FRAME_HEIGHT):
         if landmarks is None:
             self.missing += 1
             self.count, self.release_position = 0, None
@@ -31,7 +33,7 @@ class PinchDetector:
                 self.ratio, self.cursor = None, None
             return {"state": "NO HAND", "position": None, "ratio": None, "event": event, "event_position": None}
 
-        points = [(p.x * FRAME_WIDTH, p.y * FRAME_HEIGHT) for p in landmarks]
+        points = [(p.x * width, p.y * height) for p in landmarks]
         palm = max(distance(points[WRIST], points[MIDDLE_BASE]), distance(points[INDEX_BASE], points[PINKY_BASE]), 1.0)
         raw_ratio = distance(points[THUMB], points[INDEX]) / palm
         self.ratio = raw_ratio if self.ratio is None else 0.5 * raw_ratio + 0.5 * self.ratio
