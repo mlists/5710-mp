@@ -259,6 +259,10 @@ def place_piece(piece, row, col, board_pose):
 MAX_CORNER_ERROR_SQUARES = 0.6
 
 
+class BoardLost(RuntimeError):
+    """The board has not been detected for several attempts: stop drawing pieces."""
+
+
 def _solve_pose(result):
     """TrackerResult -> pose dict (raises RuntimeError if the pose is rejected)."""
     if not result.tracking_ok:
@@ -320,25 +324,36 @@ class LivePoseTracker:
     Runs the (slow, ~250 ms) detector only to start, every `detect_every`
     frames, and after tracking is lost. Every other frame it follows the board
     with optical flow (a few ms), so the overlay moves with the board.
-    If a re-detection fails (e.g. a hand covers the corners) it just keeps
-    tracking the previous association instead of dropping the board.
+
+    If a re-detection fails (e.g. a hand covers the corners) it keeps tracking
+    and retries every `retry_every` frames. After `max_failed_detections`
+    failed attempts in a row the board is considered gone: the tracker resets
+    and BoardLost is raised, so the caller stops drawing pieces. It starts
+    again automatically as soon as the board is detected.
     """
 
-    def __init__(self, detect_every = 30, corner_contrast_threshold = 12.0):
+    def __init__(self, detect_every = 30, retry_every = 5, max_failed_detections = 3,
+                 corner_contrast_threshold = 12.0):
         self.detect_every = int(detect_every)
+        self.retry_every = int(retry_every)
+        self.max_failed = int(max_failed_detections)
         self.tracker = BoardTracker(corner_contrast_threshold = corner_contrast_threshold)
         self.n = 0
+        self.next_detect = 0
+        self.failed = 0
 
     def reset(self):
         self.tracker.reset()
         self.n = 0
+        self.next_detect = 0
+        self.failed = 0
 
     def solve(self, bgr):
-        """bgr: uint8 BGR frame. Returns a pose dict or raises."""
+        """bgr: uint8 BGR frame. Returns a pose dict or raises (BoardLost = board gone)."""
         t = self.tracker
-        run_detector = (not t.initialised or self.n % self.detect_every == 0
-                        or not t.last_tracking_ok)
+        n = self.n
         self.n += 1
+        run_detector = (not t.initialised or n >= self.next_detect or not t.last_tracking_ok)
 
         result, error = None, None
         if run_detector:
@@ -346,8 +361,15 @@ class LivePoseTracker:
                 detection = find_board.detect_chessboard(bgr)
                 result = (t.update(bgr, detection = detection) if t.initialised
                           else t.initialize(bgr, detection))
+                self.failed = 0
+                self.next_detect = n + self.detect_every
             except (RuntimeError, ValueError, cv2.error) as exc:
                 error = exc
+                self.failed += 1
+                self.next_detect = n + self.retry_every
+                if self.failed >= self.max_failed:
+                    self.reset()
+                    raise BoardLost("Board not detected") from exc
         if result is None and t.initialised:
             result = t.update(bgr)               # optical flow only
         if result is None:
