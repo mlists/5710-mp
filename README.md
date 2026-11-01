@@ -41,25 +41,25 @@ python find_board_video_v8.py --webcam 0 --calibration ".\cal_data.pkl" --displa
 **Prerecorded 1080p video, display plus CSV, screenshot and processed MP4:**
 
 ```powershell
-python find_board_video_v8.py --source ".\videos\5.mp4" --calibration ".\cal_data.pkl" --csv ".\outputs\5_diagnostics.csv" --save-preview ".\outputs\5_preview.png" --output-video ".\outputs\5_annotated.mp4"
+python find_board_video_v8.py --source ".\training-videos\5.mp4" --calibration ".\cal_data.pkl" --csv ".\outputs\5_diagnostics.csv" --save-preview ".\outputs\5_preview.png" --output-video ".\outputs\5_annotated.mp4"
 ```
 
 **Process without opening a window (useful for batches):**
 
 ```powershell
-python find_board_video_v8.py --source ".\videos\5.mp4" --no-display --csv ".\outputs\5_diagnostics.csv" --output-video ".\outputs\5_annotated.mp4"
+python find_board_video_v8.py --source ".\training-videos\5.mp4" --no-display --csv ".\outputs\5_diagnostics.csv" --output-video ".\outputs\5_annotated.mp4"
 ```
 
-**Compare the older fixed 14-pixel rule:**
+**Compare the fixed 14-pixel rule:**
 
 ```powershell
-python find_board_video_v8.py --source ".\videos\5.mp4" --pose-gate pixels --max-corner-error 14
+python find_board_video_v8.py --source ".\training-videos\5.mp4" --pose-gate pixels --max-corner-error 14
 ```
 
 **Only the first 200 frames, with less console output:**
 
 ```powershell
-python find_board_video_v8.py --source ".\videos\5.mp4" --max-frames 200 --print-every 10
+python find_board_video_v8.py --source ".\training-videos\5.mp4" --max-frames 200 --print-every 10
 ```
 
 ## 3. All command-line options
