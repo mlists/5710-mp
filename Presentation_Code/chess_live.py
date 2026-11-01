@@ -19,7 +19,7 @@ import numpy as np
 import mediapipe as mp
 
 import real_board_scene as pc
-from real_gui import App, BoardPicker, start_position
+from real_gui import App, BoardPicker, start_position, same_side
 import pinch_detector as pdm
 from pinch_detector import PinchDetector
 
@@ -42,11 +42,16 @@ def ensure_model():
 
 # Hand occlusion tuning, as fractions of palm size (wrist to middle-finger base).
 # Make the mask thinner by lowering these; set HAND_ARM_LENGTH = 0 to ignore the forearm.
-HAND_FINGER_WIDTH = 0.2
+HAND_FINGER_WIDTH = 0.17
 HAND_THUMB_WIDTH = 0.21
 HAND_ARM_WIDTH = 0.60
 HAND_ARM_LENGTH = 0.45
 HAND_FEATHER = 0.05
+
+# Hide the pieces after this many consecutive pose failures of ANY kind
+# (RuntimeError "relative gate FAIL", OrientationUnverified, BoardLost, ...).
+# 1 = hide on the first failure. Raise it (e.g. 3) to ride out single bad frames.
+HIDE_AFTER_FAILURES = 1
 
 FINGERS = ((1, 2, 3, 4), (5, 6, 7, 8), (9, 10, 11, 12), (13, 14, 15, 16), (17, 18, 19, 20))
 
@@ -100,6 +105,7 @@ class PoseWorker(threading.Thread):
         self.error = ""
         self.solve_ms = 0.0
         self.running = True
+        self.failures = 0
         self.tracker = pc.LivePoseTracker()   # detect once, then optical flow
 
     def submit(self, frame):
@@ -124,8 +130,12 @@ class PoseWorker(threading.Thread):
                 with self.lock:
                     self.result = (pose, picker)
                     self.error = ""
+                    self.failures = 0
             except Exception as exc:
                 with self.lock:
+                    self.failures += 1
+                    if isinstance(exc, pc.BoardLost) or self.failures >= HIDE_AFTER_FAILURES:
+                        self.result = (None, None)   # no valid pose: stop drawing pieces
                     self.error = f"{type(exc).__name__}: {str(exc)[:160]}"
             self.solve_ms = (time.perf_counter() - t) * 1000
 
@@ -362,7 +372,10 @@ class LiveApp(App):
                     self.held = square
             elif event == "PINCH_RELEASE":
                 if self.held is not None and square is not None and square != self.held:
-                    self.state[square] = self.state.pop(self.held)   # a capture overwrites
+                    target = self.state.get(square)
+                    # Capture only an opponent piece; a drop on your own piece snaps back
+                    if target is None or not same_side(target, self.state[self.held]):
+                        self.state[square] = self.state.pop(self.held)
                 self.held = None
             elif event == "PINCH_CANCEL":
                 self.held = None
@@ -408,7 +421,11 @@ class LiveApp(App):
                     pose = self.worker.tracker.solve(frame)
                     self.pose, self.picker = pose, BoardPicker(pose)
                     self.worker.error = ""
+                    self.worker.failures = 0
                 except Exception as exc:
+                    self.worker.failures += 1
+                    if isinstance(exc, pc.BoardLost) or self.worker.failures >= HIDE_AFTER_FAILURES:
+                        self.pose, self.picker = None, None   # no valid pose: stop drawing pieces
                     self.worker.error = f"{type(exc).__name__}: {str(exc)[:160]}"
             else:
                 self.worker.submit(frame)

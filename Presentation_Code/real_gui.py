@@ -34,6 +34,11 @@ def start_position():
     return state
 
 
+def same_side(a, b):
+    """True if two piece names ("White_Pawn", "Black_Rook") are the same colour"""
+    return a.split("_")[0] == b.split("_")[0]
+
+
 def state_to_pieces(state):
     """{(row, col): name} -> {name: ((row, col), ...)} for the renderer"""
     pieces = {}
@@ -247,9 +252,13 @@ class App:
                 if square in self.state:
                     self.selected = square
             else:
-                if square != self.selected:
-                    self.state[square] = self.state.pop(self.selected)
-                self.selected = None
+                target = self.state.get(square)
+                if target is not None and same_side(target, self.state[self.selected]):
+                    self.selected = square        # own piece: switch selection, never capture it
+                else:
+                    if square != self.selected:
+                        self.state[square] = self.state.pop(self.selected)
+                    self.selected = None
         else:
             self.state[square] = tool
             self.selected = None
