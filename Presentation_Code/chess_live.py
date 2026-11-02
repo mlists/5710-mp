@@ -19,7 +19,10 @@ import numpy as np
 import mediapipe as mp
 
 import real_board_scene as pc
-from real_gui import App, BoardPicker, start_position, same_side
+from real_gui import (
+    App, BoardPicker, start_position,
+    starting_castling_rights, validate_move, update_castling_rights, square_name,
+)
 import pinch_detector as pdm
 from pinch_detector import PinchDetector
 
@@ -247,8 +250,16 @@ class LiveApp(App):
         root.title("Chess projection editor (live + pinch)")
 
         self.state = start_position()
+        # LiveApp does not call App.__init__, so initialise ALL chess-rule state
+        # that the updated App's draw_board/apply/reset logic expects.
+        self.castling_rights = starting_castling_rights()
+        self.en_passant_target = None
+        self.invalid_square = None
         self.selected = None              # highlight (shared with the mouse Move tool)
         self.held = None                  # square currently held by a pinch
+        self.move_notice = ""
+        self.move_notice_is_error = False
+        self.move_notice_until = 0.0
         self.frame = None
         self.pose = None
         self.picker = None
@@ -361,6 +372,31 @@ class LiveApp(App):
             self.rec_note = f"saved {self.writer_path}"
             print(self.rec_note)
 
+    # ---------- Move feedback ----------
+    def announce_move(self, message, is_error=False):
+        """Keep chess feedback visible instead of losing it to tick's FPS status."""
+        self.move_notice = message
+        self.move_notice_is_error = is_error
+        self.move_notice_until = time.perf_counter() + 3.0
+
+    def apply(self, square, button):
+        """Mouse editing uses the normal App rules, with persistent feedback."""
+        if square is None:
+            return
+        super().apply(square, button)
+        if self.tool.get() != "None":
+            self.announce_move(self.status.cget("text"), self.invalid_square is not None)
+
+    def reset(self):
+        self.held = None
+        super().reset()
+        self.announce_move("Board reset to starting position.")
+
+    def clear(self):
+        self.held = None
+        super().clear()
+        self.announce_move("Board cleared.")
+
     # ---------- Pinch handling ----------
     def handle_events(self):
         for event, event_pos, cursor in self.hands.pop_events():
@@ -368,15 +404,45 @@ class LiveApp(App):
             square = self.picker.pick(*pos) if (self.picker is not None and pos) else None
 
             if event == "PINCH_START":
-                if square in self.state:          # pick up only where there is a piece
-                    self.held = square
+                self.invalid_square = None
+                # Only pick up a piece. No colour/turn restriction.
+                self.held = square if square in self.state else None
+
             elif event == "PINCH_RELEASE":
                 if self.held is not None and square is not None and square != self.held:
-                    target = self.state.get(square)
-                    # Capture only an opponent piece; a drop on your own piece snaps back
-                    if target is None or not same_side(target, self.state[self.held]):
-                        self.state[square] = self.state.pop(self.held)
+                    source = self.held
+                    # Use exactly the same chess-rule validator as the mouse Move tool.
+                    next_state, reason = validate_move(
+                        self.state, source, square,
+                        self.castling_rights, self.en_passant_target,
+                    )
+                    if next_state is None:
+                        # Snap back: nothing in the actual board state changes.
+                        self.invalid_square = square
+                        self.announce_move(f"Illegal pinch move: {reason}", is_error=True)
+                    else:
+                        moved_piece = self.state[source]
+                        side, kind = moved_piece.split("_", 1)
+                        is_castle = kind == "King" and abs(square[1] - source[1]) == 2
+                        is_promotion = kind == "Pawn" and square[0] in (0, 7)
+
+                        # Track these for future moves, the same way App.apply does.
+                        update_castling_rights(self.castling_rights, self.state, source, square)
+                        self.en_passant_target = (
+                            ((source[0] + square[0]) // 2, source[1])
+                            if kind == "Pawn" and abs(square[0] - source[0]) == 2
+                            else None
+                        )
+                        self.state = next_state
+                        self.invalid_square = None
+                        suffix = (" (castling)" if is_castle else
+                                  " (promoted to Queen)" if is_promotion else "")
+                        self.announce_move(
+                            f"Pinch: {side} {kind} {square_name(source)} to "
+                            f"{square_name(square)}{suffix}."
+                        )
                 self.held = None
+
             elif event == "PINCH_CANCEL":
                 self.held = None
 
@@ -449,10 +515,15 @@ class LiveApp(App):
             board = "board OK" if not self.worker.error else f"board lost ({self.worker.error})"
             g = self.hands.latest_gesture()
             hand = self.hands.error or (g["state"] if g else "starting")
-            self.status.config(text=f"{w}x{h}   display {self.fps:.0f} fps   "
-                                    f"pose {self.worker.solve_ms:.0f} ms   {board}   "
-                                    f"hand {self.hands.ms:.0f} ms: {hand}"
-                                    + (f"   {self.rec_note}" if self.rec_note else ""))
+            show_notice = bool(self.move_notice and now < self.move_notice_until)
+            notice = f"{self.move_notice}  |  " if show_notice else ""
+            self.status.config(
+                text=(notice + f"{w}x{h}   display {self.fps:.0f} fps   "
+                      f"pose {self.worker.solve_ms:.0f} ms   {board}   "
+                      f"hand {self.hands.ms:.0f} ms: {hand}"
+                      + (f"   {self.rec_note}" if self.rec_note else "")),
+                fg=("#bb2222" if show_notice and self.move_notice_is_error else "#333"),
+            )
         self.root.after(1, self.tick)
 
     def close(self):
