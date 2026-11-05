@@ -1,0 +1,11 @@
+clip_id,start_frame,end_frame,visibility
+distance_35cm_01,0,540,PRESENT
+distance_60cm_01,0,458,PRESENT
+distance_100cm_01,0,528,PRESENT
+orientation_front_0deg_01,0,466,PRESENT
+orientation_side_45deg_01,0,531,PRESENT
+orientation_side_75deg_01,0,544,PRESENT
+negative_open_palm_01,0,631,PRESENT
+negative_pointing_01,0,629,PRESENT
+negative_closed_fist_01,0,515,PRESENT
+negative_waving_01,0,604,PRESENT

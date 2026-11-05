@@ -1,0 +1,21 @@
+experiment,condition,approx_distance_cm,approx_orientation_deg,expected_cycles,target_duration_s,hand_pose_or_action,replicates,priority
+pilot,back_of_hand_framing,,,5,15,"Hand palm DOWN above table, back of hand towards camera; confirm framing and preview",1,first
+viewpoint,back_of_hand_center,,,10,30,"Palm down, dorsum/back of hand towards camera, normal operating height and centre position; 10 clear pinch and release cycles",2,required
+viewpoint,palm_facing_center,,,10,30,Palm towards camera at same approximate hand location and operating distance; 10 pinch/release cycles as comparison,2,required
+board_zone,near,,,10,30,Palm down/back facing camera; 10 pinch/release cycles over near edge of marked tabletop working area,1,required
+board_zone,far,,,10,30,Palm down/back facing camera; 10 pinch/release cycles over far edge of marked tabletop working area,1,required
+board_zone,left,,,10,30,Palm down/back facing camera; 10 pinch/release cycles over left edge of marked tabletop working area,1,required
+board_zone,right,,,10,30,Palm down/back facing camera; 10 pinch/release cycles over right edge of marked tabletop working area,1,required
+orientation,back_yaw_45deg,,45,10,30,Palm down/back generally toward camera; yaw hand about 45 deg while keeping same working position; 10 cycles,1,required
+orientation,back_yaw_75deg,,75,10,30,Palm down/back generally toward camera; yaw hand about 75 deg while keeping same working position; 10 cycles,1,required
+negative,fist_slow_transition,,,0,35,"Palm down, slowly close and reopen hand continuously; no intentional pinch; check whether fingertips actually contact",2,required
+negative,fist_fast_transition,,,0,35,"Palm down, quickly close and reopen hand continuously; no intentional pinch; check whether fingertips actually contact",2,required
+negative,fist_static,,,0,30,"Palm down, hold closed fist stationary without intentional thumb-index pinch; check for incidental physical contact",1,required
+negative,reach_hover,,,0,30,"Palm down, repeatedly reach, hover and reposition over tabletop grid without a deliberate pinch",1,required
+interaction,stationary_hold,,,10,50,"Palm down, 10 pinch-hold-release cycles; each hold approximately 2-3 seconds, hand nearly stationary",1,required
+interaction,pinch_drag,,,10,60,"Palm down, pinch then keep pinched while moving laterally and diagonally over paper grid, then release; 10 cycles",1,required
+interaction,virtual_piece_move,,,10,70,"Palm down, approach start square, deliberate pinch START, maintain pinch while moving to target square, deliberate RELEASE; 10 sequences; no chessboard required",1,required
+optional,tracking_loss,,,5,45,"Palm down; start a deliberate pinch, temporarily hide or remove hand long enough to test 6-frame cancellation; five trials",1,optional
+optional,low_light,,,10,30,Palm down at normal centre position; 10 pinch/release cycles in reduced lighting,1,optional
+optional,brief_pinches,,,10,30,Palm down; 10 deliberately short pinch contacts to test brief-event sensitivity,1,optional
+optional,opposite_hand,,,10,30,Palm down; repeat 10 deliberate pinch/release cycles with the other hand,1,optional

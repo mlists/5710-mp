@@ -1,0 +1,57 @@
+\section{Methodology}
+\subsection{Board Detection \& Tracking}
+
+\subsection{Corner Detection}
+
+\subsection{Pose Estimation}
+Following chessboard detection and tracking, the camera pose relative to the board was estimated using the Perspective-n-Point (PnP) algorithm. The planar $8\times 8$ board was modelled with unit-length squares, the origin at its bottom-left corner, the X and Y axes along its edges, and the Z axis perpendicular to the plane. Its four 3D boundary corners were paired with 2D image coordinates obtained from the tracking homography.
+
+Using the calibrated camera intrinsic matrix \(K\) and lens-distortion coefficients \(D\), the camera pose was estimated using the iterative PnP algorithm, which applies Levenberg-Marquadt optimisation to minimise reprojection error \cite{marchand2016, opencvPnP}. The resulting rotation matrix \(R\) and translation vector \(\mathbf{t}\) define the rigid transformation from board coordinates to camera coordinates:
+\begin{equation*}
+    \mathbf{X}_c=R\mathbf{X}_b+\mathbf{t}
+\end{equation*}
+The optimisation can be expressed as:
+\begin{equation*}
+    (\hat{R},\hat{\mathbf{t}})=\underset{R,\mathbf{t}}{\arg\min}
+    \sum_{i=1}^{4}
+    \lVert\mathbf{p}_i-
+    \pi(K,D,R\mathbf{X}_i+\mathbf{t})\rVert_2^2
+\end{equation*}
+
+where $\mathbf{X}_i$ and $\mathbf{p}_i$ are corresponding 3D board and tracked 2D image corners, and $\pi$ denotes perspective projection incorporating camera calibration.
+
+Pose accuracy was evaluated by reprojecting the corners and calculating their Euclidean errors $e_i=\lVert\mathbf{p}_i-\hat{\mathbf{p}}_i\rVert_2$, giving:
+\begin{equation*}
+    \mathrm{RMSE}=\sqrt{\frac{1}{4}\sum_{i=1}^{4}e_i^2}
+\end{equation*}
+
+To account for board distance and perspective, each error was normalised by its local projected square size \(s_i\), defined as the geometric mean of the two adjacent square-edge lengths obtained through the homography. Poses were accepted when:
+\begin{equation*}
+    \max_i\left(\frac{e_i}{s_i}\right)\leq0.60
+\end{equation*}
+
+Additional checks rejected poses with corners behind the camera or the camera positioned on the incorrect side of the board plane. Accepted poses were used to align the virtual chess pieces with the physical board.
+
+\subsection{Gesture Recognition}
+Hand gesture recognition was implemented using the MediaPipe Hand Landmarker model, which estimates 21 landmarks per frame. Processing was limited to one hand, with pinching detected using the thumb tip (landmark 4) and index fingertip (landmark 8).
+\begin{figure}[htbp]
+    \centering      
+    \includegraphics[width=0.5\columnwidth]{images/handlandmarks.png}
+    \caption{Media pipe hand landmarks with indices.}
+    \label{fig:mediapipe landmarks}
+\end{figure}
+
+% The Euclidean distance between the fingertips was normalised by a characteristic palm dimension, defined as the larger of the wrist-to-middle-finger-base distance and the index-to-little-finger-base distance. This produced a dimensionless pinch ratio:
+Fingertip distance was normalised by the larger of two palm dimensions, producing a scale-independent pinch ratio:
+\begin{equation*}
+    r= \frac{\lVert p_4 - p_8 \rVert}{\text{max}(\lVert p_0-p_9 \rVert,\ \lVert p_5 -p_{17}\rVert) }
+\end{equation*}
+
+Normalisation reduced sensitivity to hand size and distance from the camera, and the measured ratio was temporally smoothed using equal weights for the current observation and previous filtered estimates. To reduce false gesture detections caused by, hysteresis thresholds of 0.30 (pinch) and 0.35 (release) were applied, requiring three consecutive processed frames to confirm each state change. Additionally, if the hand remained undetected for six processed observations, an active pinch was cancelled. These mechanisms reduced unintended gesture-state transitions and improved robustness to temporary tracking losses.
+
+A gesture cursor was positioned one-quarter of the distance from the thumb tip towards the index fingertip, with additional positional smoothing. Using the estimated board pose, this cursor was mapped onto the chessboard plane through ray-plane intersection and associated with the nearest valid square.
+
+A confirmed pinch over an occupied square initiated piece selection, while a subsequent release identified the intended destination. The cursor position at the first release-threshold crossing was retained to minimise displacement during confirmation and then the proposed move was then validated before updating the board state.
+\subsection{Projection}
+
+\subsection{Integration}

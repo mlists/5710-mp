@@ -1,0 +1,21 @@
+clip_id,status,reviewed_at_utc,notes
+pilot_back_of_hand_framing_01,COMPLETE,2026-11-05T06:05:50+00:00,Events independently reviewed against raw video
+viewpoint_back_of_hand_center_01,COMPLETE,2026-11-05T06:09:17+00:00,Events independently reviewed against raw video
+viewpoint_back_of_hand_center_02,COMPLETE,2026-11-05T08:42:57+00:00,Events independently reviewed against raw video
+viewpoint_palm_facing_center_01,COMPLETE,2026-11-05T08:45:33+00:00,Events independently reviewed against raw video
+viewpoint_palm_facing_center_02,COMPLETE,2026-11-05T08:48:30+00:00,Events independently reviewed against raw video
+board_zone_near_01,COMPLETE,2026-11-05T08:51:09+00:00,Events independently reviewed against raw video
+board_zone_far_01,COMPLETE,2026-11-05T08:53:56+00:00,Events independently reviewed against raw video
+board_zone_left_01,COMPLETE,2026-11-05T08:56:26+00:00,Events independently reviewed against raw video
+board_zone_right_01,COMPLETE,2026-11-05T08:59:37+00:00,Events independently reviewed against raw video
+orientation_back_yaw_45deg_01,COMPLETE,2026-11-05T09:03:28+00:00,Events independently reviewed against raw video
+orientation_back_yaw_75deg_01,COMPLETE,2026-11-05T09:07:10+00:00,Events independently reviewed against raw video
+negative_fist_slow_transition_01,COMPLETE,2026-11-05T09:07:58+00:00,Events independently reviewed against raw video
+negative_fist_slow_transition_02,COMPLETE,2026-11-05T09:08:17+00:00,Events independently reviewed against raw video
+negative_fist_fast_transition_01,COMPLETE,2026-11-05T09:08:34+00:00,Events independently reviewed against raw video
+negative_fist_fast_transition_02,COMPLETE,2026-11-05T09:08:47+00:00,Events independently reviewed against raw video
+negative_reach_hover_01,COMPLETE,2026-11-05T09:12:25+00:00,Events independently reviewed against raw video
+interaction_stationary_hold_01,COMPLETE,2026-11-05T09:15:19+00:00,Events independently reviewed against raw video
+interaction_pinch_drag_01,COMPLETE,2026-11-05T09:20:18+00:00,Events independently reviewed against raw video
+interaction_virtual_piece_move_01,COMPLETE,2026-11-05T09:24:14+00:00,Events independently reviewed against raw video
+negative_fist_static_01,COMPLETE,2026-11-05T09:41:15+00:00,Events independently reviewed against raw video

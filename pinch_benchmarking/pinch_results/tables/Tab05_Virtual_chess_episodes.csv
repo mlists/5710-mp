@@ -1,0 +1,4 @@
+episode,pred_start_sec,pred_release_sec,annotated_start_sec,start_early_by_sec
+Episode 1: false command,15.979,16.245,,
+Episode 2: early START,17.032,,17.798,0.7659999999999982
+Episode 3: early START,33.156,,33.929,0.7730000000000032

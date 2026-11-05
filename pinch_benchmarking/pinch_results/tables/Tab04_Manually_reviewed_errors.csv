@@ -1,0 +1,4 @@
+clip_id,fp,fn,manual_finding
+orientation_back_yaw_75deg_01,0,8,Index/thumb tips occluded behind hand; 96.7% hand detection.
+board_zone_left_01,0,6,Partial hand exit/re-entry disrupts landmark extraction.
+interaction_virtual_piece_move_01,4,2,Six audit entries traced to three premature START episodes.

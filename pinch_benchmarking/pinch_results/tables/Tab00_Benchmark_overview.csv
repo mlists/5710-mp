@@ -1,0 +1,5 @@
+metric,session1,session2
+Positive conditions / clips,6 conditions,13 clips
+F1,1.000 in all 6 tests,0.929 pooled
+False START/min,3.59 (approx.),23.20
+Median absolute delay,113 ms (approx.),95.5 ms

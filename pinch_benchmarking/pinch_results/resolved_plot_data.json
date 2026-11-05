@@ -1,0 +1,208 @@
+{
+  "source": "Pinch_Gesture_Report_Handover_REDOWNLOAD(1).docx, 6 November 2026",
+  "session1": {
+    "positive_test_conditions": 6,
+    "positive_f1_each": 1.0,
+    "negative_false_starts_per_min": 3.591,
+    "median_abs_delay_ms": 113.0,
+    "note": "Session 1 figures read from prior plots, not independently re-aggregated CSVs."
+  },
+  "session2": {
+    "positive_clips": 13,
+    "negative_clips": 6,
+    "annotated_events": 295,
+    "tp": 268,
+    "fp": 14,
+    "fn": 27,
+    "precision": 0.95,
+    "recall": 0.908,
+    "f1": 0.929,
+    "median_abs_delay_ms": 95.5,
+    "negative_false_starts": 51,
+    "negative_duration_sec": 131.88,
+    "replay_checked_clips": 19,
+    "replay_discrepancies": 0,
+    "event_match_tolerance_sec": 0.5,
+    "confirmation_frames": 3,
+    "negative_false_start_per_min": 23.202911737943587
+  },
+  "conditions": [
+    {
+      "family": "Viewpoint",
+      "condition": "Palm-facing",
+      "key": "view_palm",
+      "f1": 1.0,
+      "hand_detection_pct": 97.5
+    },
+    {
+      "family": "Viewpoint",
+      "condition": "Back-of-hand",
+      "key": "view_back",
+      "f1": 0.93,
+      "hand_detection_pct": 89.7
+    },
+    {
+      "family": "Working area",
+      "condition": "Near",
+      "key": "zone_near",
+      "f1": 0.976,
+      "hand_detection_pct": 97.4
+    },
+    {
+      "family": "Working area",
+      "condition": "Far",
+      "key": "zone_far",
+      "f1": 0.976,
+      "hand_detection_pct": 88.1
+    },
+    {
+      "family": "Working area",
+      "condition": "Left",
+      "key": "zone_left",
+      "f1": 0.857,
+      "hand_detection_pct": 73.1
+    },
+    {
+      "family": "Working area",
+      "condition": "Right",
+      "key": "zone_right",
+      "f1": 0.912,
+      "hand_detection_pct": 95.7
+    },
+    {
+      "family": "Back-of-hand yaw",
+      "condition": "45 deg yaw",
+      "key": "yaw_45",
+      "f1": 0.966,
+      "hand_detection_pct": 98.1
+    },
+    {
+      "family": "Back-of-hand yaw",
+      "condition": "75 deg yaw",
+      "key": "yaw_75",
+      "f1": 0.818,
+      "hand_detection_pct": 96.7
+    },
+    {
+      "family": "Interaction",
+      "condition": "Stationary hold",
+      "key": "interaction_hold",
+      "f1": 0.976,
+      "hand_detection_pct": 98.9
+    },
+    {
+      "family": "Interaction",
+      "condition": "Pinch and drag",
+      "key": "interaction_drag",
+      "f1": 0.889,
+      "hand_detection_pct": 90.5
+    },
+    {
+      "family": "Interaction",
+      "condition": "Virtual chess move",
+      "key": "interaction_chess",
+      "f1": 0.824,
+      "hand_detection_pct": 99.0
+    }
+  ],
+  "negative_controls": [
+    {
+      "action": "Fast fist transitions",
+      "key": "fist_fast",
+      "n_clips": 2,
+      "false_starts": 25,
+      "duration_sec": 23.22,
+      "false_start_per_min": 64.59948320413437
+    },
+    {
+      "action": "Slow fist transitions",
+      "key": "fist_slow",
+      "n_clips": 2,
+      "false_starts": 19,
+      "duration_sec": 43.57,
+      "false_start_per_min": 26.164792288271748
+    },
+    {
+      "action": "Static fist",
+      "key": "fist_static",
+      "n_clips": 1,
+      "false_starts": 4,
+      "duration_sec": 35.04,
+      "false_start_per_min": 6.8493150684931505
+    },
+    {
+      "action": "Reach / hover",
+      "key": "reach_hover",
+      "n_clips": 1,
+      "false_starts": 3,
+      "duration_sec": 30.05,
+      "false_start_per_min": 5.990016638935108
+    }
+  ],
+  "ablation": [
+    {
+      "frames": 1,
+      "positive_f1": 0.915,
+      "positive_recall": 0.946,
+      "false_start_per_min": 24.11,
+      "median_abs_delay_ms": 32.0
+    },
+    {
+      "frames": 3,
+      "positive_f1": 0.929,
+      "positive_recall": 0.908,
+      "false_start_per_min": 23.2,
+      "median_abs_delay_ms": 95.5
+    },
+    {
+      "frames": 5,
+      "positive_f1": 0.934,
+      "positive_recall": 0.908,
+      "false_start_per_min": 22.29,
+      "median_abs_delay_ms": 164.0
+    }
+  ],
+  "manually_inspected": [
+    {
+      "label": "75 deg yaw",
+      "clip_id": "orientation_back_yaw_75deg_01",
+      "fp": 0,
+      "fn": 8,
+      "note": "Index/thumb tips occluded behind hand; 96.7% hand detection."
+    },
+    {
+      "label": "Board-left",
+      "clip_id": "board_zone_left_01",
+      "fp": 0,
+      "fn": 6,
+      "note": "Partial hand exit/re-entry disrupts landmark extraction."
+    },
+    {
+      "label": "Virtual chess move",
+      "clip_id": "interaction_virtual_piece_move_01",
+      "fp": 4,
+      "fn": 2,
+      "note": "Six audit entries traced to three premature START episodes."
+    }
+  ],
+  "virtual_move_episodes": [
+    {
+      "name": "Episode 1: false command",
+      "pred_start_sec": 15.979,
+      "pred_release_sec": 16.245,
+      "gt_start_sec": null
+    },
+    {
+      "name": "Episode 2: early START",
+      "pred_start_sec": 17.032,
+      "pred_release_sec": null,
+      "gt_start_sec": 17.798
+    },
+    {
+      "name": "Episode 3: early START",
+      "pred_start_sec": 33.156,
+      "pred_release_sec": null,
+      "gt_start_sec": 33.929
+    }
+  ]
+}

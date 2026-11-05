@@ -1,0 +1,4 @@
+frames,positive_f1,positive_recall,false_starts_per_min,median_abs_delay_ms
+1,0.915,0.946,24.11,32.0
+3,0.929,0.908,23.2,95.5
+5,0.934,0.908,22.29,164.0

@@ -1,0 +1,11 @@
+clip_id,tested_baseline,compared_frames,different_event_count,different_state_count,different_ratio_count,reason
+distance_100cm_01,True,529,0,0,0,OK
+distance_35cm_01,True,541,0,0,0,OK
+distance_60cm_01,True,459,0,0,0,OK
+negative_closed_fist_01,True,516,0,0,0,OK
+negative_open_palm_01,True,632,0,0,0,OK
+negative_pointing_01,True,630,0,0,0,OK
+negative_waving_01,True,605,0,0,0,OK
+orientation_front_0deg_01,True,467,0,0,0,OK
+orientation_side_45deg_01,True,532,0,0,0,OK
+orientation_side_75deg_01,True,545,0,0,0,OK

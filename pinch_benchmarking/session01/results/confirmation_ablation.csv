@@ -1,0 +1,4 @@
+confirmation_frames,positive_clips,positive_annotated_events,positive_tp,positive_fp,positive_fn,positive_precision,positive_recall,positive_f1,median_absolute_delay_ms,median_signed_delay_ms,negative_clips,negative_duration_s,negative_false_starts,negative_false_starts_per_min
+1,6,120,120,0,0,1.0,1.0,1.0,36.114549999999745,35.36090000000058,4,100.2553206,10,5.984719777555626
+3,6,120,120,0,0,1.0,1.0,1.0,112.74914999999996,112.74914999999996,4,100.2553206,6,3.590831866533376
+5,6,120,120,0,0,1.0,1.0,1.0,191.12684999999985,191.12684999999985,4,100.2553206,6,3.590831866533376

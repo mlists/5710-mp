@@ -541,9 +541,9 @@ if __name__ == "__main__":
     parser.add_argument("--source", default="0", help="camera index or video file")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
-    parser.add_argument("--pinch", type=float, default=0.1, help="pinch close threshold")
-    parser.add_argument("--release", type=float, default=0.52, help="pinch release threshold")
-    parser.add_argument("--frames", type=int, default=2, help="frames needed to confirm a change")
+    parser.add_argument("--pinch", type=float, default=0.3, help="pinch close threshold")
+    parser.add_argument("--release", type=float, default=0.35, help="pinch release threshold")
+    parser.add_argument("--frames", type=int, default=3, help="frames needed to confirm a change")
     parser.add_argument("--save", default=None, metavar="OUT.mp4",
                         help="record the projected video to this file (a video file source is "
                              "saved in one pass, frame-accurate, then recording stops)")

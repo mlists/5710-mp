@@ -1,0 +1,11 @@
+clip_id,status,reviewed_at_utc,notes
+distance_35cm_01,COMPLETE,2026-11-05T03:57:45+00:00,Events independently reviewed against raw video
+distance_60cm_01,COMPLETE,2026-11-05T04:01:13+00:00,Events independently reviewed against raw video
+distance_100cm_01,COMPLETE,2026-11-05T04:03:27+00:00,Events independently reviewed against raw video
+orientation_front_0deg_01,COMPLETE,2026-11-05T04:05:36+00:00,Events independently reviewed against raw video
+orientation_side_45deg_01,COMPLETE,2026-11-05T04:07:41+00:00,Events independently reviewed against raw video
+orientation_side_75deg_01,COMPLETE,2026-11-05T04:09:47+00:00,Events independently reviewed against raw video
+negative_open_palm_01,COMPLETE,2026-11-05T04:10:34+00:00,Events independently reviewed against raw video
+negative_pointing_01,COMPLETE,2026-11-05T04:10:47+00:00,Events independently reviewed against raw video
+negative_closed_fist_01,COMPLETE,2026-11-05T04:11:07+00:00,Events independently reviewed against raw video
+negative_waving_01,COMPLETE,2026-11-05T04:11:17+00:00,Events independently reviewed against raw video

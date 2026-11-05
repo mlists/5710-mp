@@ -1,0 +1,12 @@
+family,condition,event_f1,hand_detection_pct
+Viewpoint,Palm-facing,1.0,97.5
+Viewpoint,Back-of-hand,0.93,89.7
+Working area,Near,0.976,97.4
+Working area,Far,0.976,88.1
+Working area,Left,0.857,73.1
+Working area,Right,0.912,95.7
+Back-of-hand yaw,45 deg yaw,0.966,98.1
+Back-of-hand yaw,75 deg yaw,0.818,96.7
+Interaction,Stationary hold,0.976,98.9
+Interaction,Pinch and drag,0.889,90.5
+Interaction,Virtual chess move,0.824,99.0

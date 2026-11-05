@@ -1,0 +1,15 @@
+experiment,condition,approx_distance_cm,approx_orientation_deg,expected_cycles,target_duration_s,hand_pose_or_action,replicates,priority
+pilot,baseline,60,0,5,15,ordinary contact and release,1,first
+distance,35cm,35,0,10,25,ten full contacts and separations,1,required
+distance,60cm,60,0,10,25,ten full contacts and separations,1,required
+distance,100cm,100,0,10,25,ten full contacts and separations,1,required
+orientation,front_0deg,60,0,10,25,palm facing camera,1,required
+orientation,side_45deg,60,45,10,25,hand yaw about 45 degrees,1,required
+orientation,side_75deg,60,75,10,25,hand yaw about 75 degrees,1,required
+negative,open_palm,60,0,0,25,hold open palm with no fingertip contact,1,required
+negative,pointing,60,0,0,25,point with index finger without pinch,1,required
+negative,closed_fist,60,0,0,25,closed fist without thumb-index contact,1,required
+negative,waving,60,0,0,25,wave hand without touching thumb and index,1,required
+optional,light_low,60,0,10,25,ten gestures in reduced light,1,optional
+optional,opposite_hand,60,0,10,25,ten gestures with other hand,1,optional
+optional,tracking_loss,60,0,5,25,cover hand temporarily during an active pinch,1,optional
