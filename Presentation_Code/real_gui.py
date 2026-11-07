@@ -6,24 +6,28 @@ from tkinter import filedialog, messagebox
 
 import cv2
 import numpy as np
-import trimesh
-import pyrender
-import math
 
-# >>> Change this to whatever your projection file is called (without .py) <<<
 import real_board_scene as pc
 
-SQ = 70                      # size of a square on the simulated board (px)
-MAX_W, MAX_H = 900, 700      # max size of the image view (px)
+# =============== Constants ===============
+SQ = 70
+MAX_W, MAX_H = 900, 700
 FONT = ("Segoe UI Symbol", 34)
-GLYPHS = {"King": "♚", "Queen": "♛", "Rook": "♜", "Bishop": "♝", "Knight": "♞", "Pawn": "♟"}
-KINDS = ["King", "Queen", "Rook", "Bishop", "Knight", "Pawn"]
+GLYPHS = {"King": "♚",
+          "Queen": "♛",
+          "Rook": "♜",
+          "Bishop": "♝",
+          "Knight": "♞",
+          "Pawn": "♟"
+}
+
+PIECES = ["King", "Queen", "Rook", "Bishop", "Knight", "Pawn"]
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp")
 
 
-# =============== Board model ===============
+# =============== Functions ===============
 def start_position():
-    """{(row, col): piece name}. Row 0 is Black's back rank, same as the renderer"""
+    """Initialise the board"""
     back = ["Rook", "Knight", "Bishop", "Queen", "King", "Bishop", "Knight", "Rook"]
     state = {}
     for c in range(8):
@@ -40,21 +44,14 @@ def same_side(a, b):
 
 
 def state_to_pieces(state):
-    """{(row, col): name} -> {name: ((row, col), ...)} for the renderer"""
+    """Convert to format for renderer"""
     pieces = {}
     for (r, c), name in state.items():
         pieces.setdefault(name, []).append((r, c))
     return {k: tuple(v) for k, v in pieces.items()}
 
-
-
-# =============== Chess move validation ===============
-# Board coordinates: row 0 = rank 8 (Black), row 7 = rank 1 (White).
-# Either colour may move at any time. The Move tool still enforces piece
-# movement, captures, king safety and the special chess moves.
-
 def starting_castling_rights():
-    """Rights belong to the original, unmoved king and corner rooks."""
+    """Rights belong to the original, unmoved king and corner rooks"""
     return {"White": {"K": True, "Q": True},
             "Black": {"K": True, "Q": True}}
 
@@ -69,13 +66,13 @@ def other_side(side):
 
 
 def square_name(square):
-    """Board coordinate to algebraic notation, e.g. (7, 4) -> 'e1'."""
+    """Board coordinate to algebraic notation"""
     row, col = square
     return f"{'abcdefgh'[col]}{8 - row}"
 
 
 def path_is_clear(state, start, end):
-    """Check all *intermediate* squares of a straight or diagonal ray."""
+    """Checks the path is clear for certain pieces"""
     sr, sc = start
     er, ec = end
     step_r = (er > sr) - (er < sr)
@@ -90,7 +87,7 @@ def path_is_clear(state, start, end):
 
 
 def is_square_attacked(state, square, attacker_side):
-    """Chess attack map; pawns attack diagonally even onto empty squares."""
+    """Chess attack map; pawns attack diagonally even onto empty squares"""
     tr, tc = square
     for (sr, sc), piece in state.items():
         side, kind = piece.split("_", 1)
@@ -120,16 +117,7 @@ def is_square_attacked(state, square, attacker_side):
 
 
 def validate_move(state, start, end, castling_rights, en_passant_target=None):
-    """Validate a move and simulate it, without mutating the input state.
-
-    Returns (new_state, None) for legal moves, or (None, explanation) when
-    illegal. Turn order is intentionally NOT checked. When a custom position
-    contains no king of the moving colour, the king-safety check is skipped
-    so the editor can still be used to experiment with individual pieces.
-
-    Promotions automatically produce a queen. Castling rights and the
-    en-passant target are tracked separately by App, which calls this function.
-    """
+    """Validate a move and simulate it, without mutating the input state"""
     if any(not (0 <= value < 8) for value in (*start, *end)):
         return None, "The square is outside the chessboard."
     if start == end:
@@ -171,7 +159,7 @@ def validate_move(state, start, end, castling_rights, en_passant_target=None):
 
     elif kind == "King":
         if max(adr, adc) == 1:
-            pass  # Checked for attacked destination after simulation.
+            pass  
         elif dr == 0 and adc == 2:
             home_row = 7 if side == "White" else 0
             flank = "K" if dc == 2 else "Q"
@@ -218,8 +206,6 @@ def validate_move(state, start, end, castling_rights, en_passant_target=None):
     else:
         return None, f"Unknown chess piece: {kind}."
 
-    # Simulate the complete position, including special moves, before allowing
-    # any update. This catches pinned pieces and moves leaving the king in check.
     next_state = state.copy()
     del next_state[start]
     if en_passant_capture is not None:
@@ -238,7 +224,7 @@ def validate_move(state, start, end, castling_rights, en_passant_target=None):
 
 
 def revoke_castling_rights_for_square(rights, square):
-    """A manual edit on a king/rook home square invalidates its old rights."""
+    """A manual edit on a king/rook home square invalidates its old rights"""
     for side, row in (("White", 7), ("Black", 0)):
         if square == (row, 4):
             rights[side]["K"] = rights[side]["Q"] = False
@@ -249,7 +235,7 @@ def revoke_castling_rights_for_square(rights, square):
 
 
 def update_castling_rights(rights, state, start, end):
-    """Permanently remove castling rights after king/rook moves or captures."""
+    """Permanently remove castling rights after king/rook moves or captures"""
     moving_piece = state[start]
     side, kind = moving_piece.split("_", 1)
     if kind == "King":
@@ -262,53 +248,6 @@ def update_castling_rights(rights, state, start, end):
         revoke_castling_rights_for_square(rights, end)
 
 
-# =============== Rendering with a cached pose ===============
-def render_overlay(frame, pose, pieces, occluder=None):
-    """Same scene/render/composite as render_frame, but reuses an existing pose.
-
-    occluder: optional float32 (h, w) array in [0, 1] (1 = something real, e.g. a hand,
-    is in front of the board there); pieces are not drawn where it is set.
-    """
-    h, w = frame.shape[:2]
-    K = np.asarray(pose["camera_matrix"], dtype=float)
-    R = np.asarray(pose["R"], dtype=float)
-    tvec = np.asarray(pose["tvec"], dtype=float).reshape(3)
-
-    cam_pose = pc.opencv_to_gl_camera_pose(R, tvec)
-    distance = float(np.linalg.norm(tvec))
-
-    camera = pyrender.IntrinsicsCamera(
-        fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2],
-        znear=distance * 0.01, zfar=distance * 10,
-    )
-
-    scene = pyrender.Scene(bg_color=[0, 0, 0, 0], ambient_light=[pc.AMBIENT_LIGHT] * 3)
-    scene.add(camera, pose=cam_pose)
-
-    light = pyrender.DirectionalLight(color=np.ones(3), intensity=pc.LIGHT_INTENSITY)
-    tilt = trimesh.transformations.rotation_matrix(math.radians(pc.LIGHT_TILT_DEG), [1, 0, 0])
-    scene.add(light, pose=cam_pose @ tilt)
-
-    for piece, squares in pieces.items():
-        for row, col in squares:
-            mesh, placement = pc.place_piece(piece, row, col, pose)
-            scene.add(mesh, pose=placement)
-
-    color, _ = pc.get_renderer(w, h).render(scene, flags=pyrender.RenderFlags.RGBA)
-
-    out = frame.copy()
-    alpha_full = color[..., 3].astype(np.float32) / 255
-    if occluder is not None:
-        alpha_full *= 1.0 - occluder
-    mask = alpha_full > 0
-    if mask.any():
-        alpha = alpha_full[mask][:, None]
-        piece_bgr = color[mask][:, [2, 1, 0]].astype(np.float32)
-        out[mask] = (piece_bgr * alpha + out[mask] * (1.0 - alpha)).astype(np.uint8)
-    return out
-
-
-# =============== Image <-> board square mapping ===============
 class BoardPicker:
     """Converts image pixels to (row, col) squares and back, using the solved pose"""
 
@@ -316,12 +255,12 @@ class BoardPicker:
         self.K = np.asarray(pose["camera_matrix"], dtype=float)
         self.R = np.asarray(pose["R"], dtype=float)
         self.t = np.asarray(pose["tvec"], dtype=float).reshape(3)
-        self.centres = np.asarray(pose["square_centres_board"], dtype=float)[..., :3]
+        self.centres = np.asarray(pose["square_centres_board"], dtype=float)
         self.spacing = float(np.linalg.norm(self.centres[0, 0] - self.centres[0, 1]))
         self.rvec, _ = cv2.Rodrigues(self.R)
 
     def pick(self, u, v):
-        """Pixel -> (row, col) by intersecting the viewing ray with the board plane"""
+        """Converting from pinch co-ordinates to a board square"""
         ray_cam = np.linalg.inv(self.K) @ np.array([u, v, 1.0])
         origin = -self.R.T @ self.t
         direction = self.R.T @ ray_cam
@@ -353,7 +292,7 @@ class App:
         self.state = start_position()
         self.castling_rights = starting_castling_rights()
         self.en_passant_target = None
-        self.selected = None          # square picked up by the Move tool
+        self.selected = None        
         self.invalid_square = None
         self.frame = None
         self.pose = None
@@ -362,19 +301,19 @@ class App:
         self.photo = None
         self.out_bgr = None
 
-        self.tool = tk.StringVar(value="None")   # nothing selected: clicks do nothing
+        self.tool = tk.StringVar(value="None")  
+        self._last_tool = "None"
         self.build_ui()
 
-        if image_path:
-            self.load_image(image_path)
-        else:
-            self.open_image()
+        path = image_path or self.ask_image()
+        if path:
+            self.load_image(path)
         self.refresh()
 
-    # ---------- UI ----------
     def build_ui(self):
         top = tk.Frame(self.root)
         top.pack(side="top", fill="x", padx=6, pady=4)
+        self.toolbar = top            
 
         tk.Button(top, text="Open image", command=self.open_image).pack(side="left")
         tk.Button(top, text="Reset", command=self.reset).pack(side="left", padx=4)
@@ -384,7 +323,7 @@ class App:
         palette = tk.Frame(self.root)
         palette.pack(side="top", fill="x", padx=6)
         for i, side in enumerate(("White", "Black")):
-            for j, kind in enumerate(KINDS):
+            for j, kind in enumerate(PIECES):
                 tk.Radiobutton(
                     palette, text=f"{GLYPHS[kind]} {side} {kind}", variable=self.tool,
                     value=f"{side}_{kind}", indicatoron=False, width=14,
@@ -410,15 +349,17 @@ class App:
         self.image_cv.bind("<Button-1>", lambda e: self.on_image_click(e, "left"))
         self.image_cv.bind("<Button-3>", lambda e: self.on_image_click(e, "right"))
 
-        self.status = tk.Label(self.root, anchor="w",
-                               text="No tool selected. Click a piece button to place it (click it again to switch off)")
+        self.status = tk.Label(self.root, anchor="w", text="No tool selected. Click a piece button to place it (click it again to switch off)")
         self.status.pack(side="bottom", fill="x", padx=6)
 
-    # ---------- Loading ----------
-    def open_image(self):
-        path = filedialog.askopenfilename(
+    def ask_image(self):
+        """Ask for an image file. Returns '' if the dialog is cancelled"""
+        return filedialog.askopenfilename(
             title="Pick a board image",
             filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp")])
+
+    def open_image(self):
+        path = self.ask_image()
         if path:
             self.load_image(path)
             self.refresh()
@@ -433,17 +374,16 @@ class App:
         self.picker = None
         try:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-            self.pose, _ = pc.estimate_pose(rgb)       # done once per image, not per edit
+            self.pose = pc.estimate_pose(rgb)       # done once per image, not per edit
             self.picker = BoardPicker(self.pose)
             self.status.config(text=f"Loaded {os.path.basename(path)}")
         except Exception as error:
             messagebox.showerror("Board not found",
                                  f"Pose estimation failed:\n{type(error).__name__}: {error}")
 
-    # ---------- Editing ----------
     def pick_tool(self, value):
-        """Clicking the active tool again switches it off (clicks then do nothing)"""
-        if value == getattr(self, "_last_tool", "None"):
+        """Clicking the active tool again switches it off"""
+        if value == self._last_tool:
             self.tool.set("None")
             self._last_tool = "None"
         else:
@@ -459,6 +399,33 @@ class App:
     def get_occluder(self):
         """Override to return an (h, w) float mask of things in front of the board"""
         return None
+
+    def attempt_move(self, source, square):
+        """Validate and, if legal, commit a move. Shared by mouse and pinch input"""
+        next_state, reason = validate_move(
+            self.state, source, square,
+            self.castling_rights, self.en_passant_target,
+        )
+        if next_state is None:
+            self.invalid_square = square
+            return None, reason
+
+        side, kind = self.state[source].split("_", 1)
+        is_castle = kind == "King" and abs(square[1] - source[1]) == 2
+        is_promotion = kind == "Pawn" and square[0] in (0, 7)
+
+        # Rights must be updated from the position BEFORE the move
+        update_castling_rights(self.castling_rights, self.state, source, square)
+        self.en_passant_target = (
+            ((source[0] + square[0]) // 2, source[1])
+            if kind == "Pawn" and abs(square[0] - source[0]) == 2
+            else None
+        )
+        self.state = next_state
+        self.invalid_square = None
+        suffix = (" (castling)" if is_castle else
+                  " (promoted to Queen)" if is_promotion else "")
+        return f"{side} {kind} {square_name(source)} to {square_name(square)}{suffix}.", None
 
     def apply(self, square, button):
         if square is None:
@@ -495,32 +462,13 @@ class App:
                     self.status.config(text=f"Selected {target.replace('_', ' ')} "
                                             f"on {square_name(square)}. Choose a destination.", fg="#333")
                 else:
-                    next_state, reason = validate_move(
-                        self.state, source, square,
-                        self.castling_rights, self.en_passant_target,
-                    )
-                    if next_state is None:
-                        self.invalid_square = square
-                        self.status.config(text=f"Illegal move: {reason}", fg="#bb2222")
+                    description, reason = self.attempt_move(source, square)
+                    if description is None:
                         # Keep source selected so the player can retry.
+                        self.status.config(text=f"Illegal move: {reason}", fg="#bb2222")
                     else:
-                        moved_piece = self.state[source]
-                        side, kind = moved_piece.split("_", 1)
-                        is_castle = kind == "King" and abs(square[1] - source[1]) == 2
-                        is_promotion = kind == "Pawn" and square[0] in (0, 7)
-                        update_castling_rights(self.castling_rights, self.state, source, square)
-                        self.en_passant_target = (
-                            ((source[0] + square[0]) // 2, source[1])
-                            if kind == "Pawn" and abs(square[0] - source[0]) == 2
-                            else None
-                        )
-                        self.state = next_state
                         self.selected = None
-                        suffix = (" (castling)" if is_castle else
-                                  " (promoted to Queen)" if is_promotion else "")
-                        self.status.config(text=f"Moved {side} {kind} "
-                                                f"{square_name(source)} to {square_name(square)}{suffix}.",
-                                           fg="#116633")
+                        self.status.config(text=f"Moved {description}", fg="#116633")
         else:
             self.state[square] = tool
             revoke_castling_rights_for_square(self.castling_rights, square)
@@ -567,7 +515,6 @@ class App:
         if path:
             cv2.imwrite(path, self.out_bgr)
 
-    # ---------- Drawing ----------
     def refresh(self):
         self.draw_board()
         self.draw_image()
@@ -607,9 +554,10 @@ class App:
         if self.frame is None:
             return
 
+        self.last_timings = {}
         if self.pose is not None:
-            out = render_overlay(self.frame, self.pose, state_to_pieces(self.state),
-                                 self.get_occluder())
+            out = pc.render_overlay(self.frame, self.pose, state_to_pieces(self.state),
+                                    self.get_occluder(), timings=self.last_timings)
         else:
             out = self.frame
         self.out_bgr = out
@@ -646,12 +594,7 @@ if __name__ == "__main__":
 
     root = tk.Tk()
     app = App(root, first_image(args.image))
-
-    def on_close():
-        pc.close_renderer()
-        root.destroy()
-
-    root.protocol("WM_DELETE_WINDOW", on_close)
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
     try:
         root.mainloop()
     finally:

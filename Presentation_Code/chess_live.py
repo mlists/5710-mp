@@ -3,8 +3,8 @@
 Pinch over a piece to pick it up, move your hand, release over a square to drop it.
 Mouse editing still works as before.
 
-    python chess_live_pinch.py
-    python chess_live_pinch.py --source 1 --frames 2
+    python chess_live.py
+    python chess_live.py --source 1 --frames 2
 """
 import argparse
 import threading
@@ -20,15 +20,18 @@ import mediapipe as mp
 
 import real_board_scene as pc
 from real_gui import (
-    App, BoardPicker, start_position,
-    starting_castling_rights, validate_move, update_castling_rights, square_name,
+    App, BoardPicker, start_position, starting_castling_rights,
 )
-import pinch_detector as pdm
 from pinch_detector import PinchDetector
 
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
              "hand_landmarker/float16/latest/hand_landmarker.task")
 MODEL_FILE = Path(__file__).resolve().parent / "hand_landmarker.task"
+
+# Pinch detector settings (single source for the CLI and LiveApp)
+DEFAULT_PINCH = 0.30      # pinch close threshold
+DEFAULT_RELEASE = 0.35    # pinch release threshold
+DEFAULT_FRAMES = 3        # frames needed to confirm a change
 
 
 def ensure_model():
@@ -98,10 +101,15 @@ def hand_mask(landmarks, width, height):
 
 
 class PoseWorker(threading.Thread):
-    """Runs board detection + pose solving in the background (unchanged)"""
+    """Runs board detection + pose solving in the background.
 
-    def __init__(self):
+    solve_once() holds the solve/failure logic, so the background loop and the
+    in-line (sync) path used when saving a video file behave identically.
+    """
+
+    def __init__(self, perf=None):
         super().__init__(daemon=True)
+        self.perf = perf
         self.lock = threading.Lock()
         self.pending = None
         self.result = (None, None)        # (pose, picker) from the last good solve
@@ -119,6 +127,32 @@ class PoseWorker(threading.Thread):
         with self.lock:
             return self.result
 
+    def solve_once(self, frame):
+        """Solve one frame and return the current (pose, picker).
+
+        On failure the previous result is kept until HIDE_AFTER_FAILURES
+        consecutive failures (or BoardLost), after which it becomes (None, None)
+        so no pieces are drawn.
+        """
+        t = time.perf_counter()
+        try:
+            pose = self.tracker.solve(frame)
+            picker = BoardPicker(pose)
+            with self.lock:
+                self.result = (pose, picker)
+                self.error = ""
+                self.failures = 0
+        except Exception as exc:
+            with self.lock:
+                self.failures += 1
+                if isinstance(exc, pc.BoardLost) or self.failures >= HIDE_AFTER_FAILURES:
+                    self.result = (None, None)   # no valid pose: stop drawing pieces
+                self.error = f"{type(exc).__name__}: {str(exc)[:160]}"
+        self.solve_ms = (time.perf_counter() - t) * 1000
+        if self.perf is not None:
+            self.perf.add("pose", self.solve_ms)
+        return self.latest()
+
     def run(self):
         while self.running:
             with self.lock:
@@ -126,21 +160,7 @@ class PoseWorker(threading.Thread):
             if frame is None:
                 time.sleep(0.005)
                 continue
-            t = time.perf_counter()
-            try:
-                pose = self.tracker.solve(frame)
-                picker = BoardPicker(pose)
-                with self.lock:
-                    self.result = (pose, picker)
-                    self.error = ""
-                    self.failures = 0
-            except Exception as exc:
-                with self.lock:
-                    self.failures += 1
-                    if isinstance(exc, pc.BoardLost) or self.failures >= HIDE_AFTER_FAILURES:
-                        self.result = (None, None)   # no valid pose: stop drawing pieces
-                    self.error = f"{type(exc).__name__}: {str(exc)[:160]}"
-            self.solve_ms = (time.perf_counter() - t) * 1000
+            self.solve_once(frame)
 
 
 class HandWorker(threading.Thread):
@@ -150,8 +170,9 @@ class HandWorker(threading.Thread):
     debounce counters rely on. Pinch events are queued for the GUI thread.
     """
 
-    def __init__(self, pinch, release, frames):
+    def __init__(self, pinch, release, frames, perf=None):
         super().__init__(daemon=True)
+        self.perf = perf
         self.lock = threading.Lock()
         self.pending = None
         self.events = []                  # (event, event_position, cursor_position)
@@ -212,9 +233,8 @@ class HandWorker(threading.Thread):
                     continue
                 t = time.perf_counter()
                 try:
-                    h, w = frame.shape[:2]
                     # Positions come back in real frame pixels (w, h passed to update below)
-
+                    h, w = frame.shape[:2]
                     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     ts = max(last_ts + 1, int((time.monotonic() - start) * 1000))
                     last_ts = ts
@@ -238,20 +258,22 @@ class HandWorker(threading.Thread):
                     with self.lock:
                         self.error = f"hand: {type(exc).__name__}: {str(exc)[:60]}"
                 self.ms = (time.perf_counter() - t) * 1000
+                if self.perf is not None:
+                    self.perf.add("hand", self.ms)
                 with self.lock:
                     self.done += 1
 
 
 class LiveApp(App):
-    def __init__(self, root, source, width=None, height=None, pinch=0.25, release=0.30, frames=3,
-                 save=None, save_fps=None):
+    def __init__(self, root, source, width=None, height=None, pinch=DEFAULT_PINCH,
+                 release=DEFAULT_RELEASE, frames=DEFAULT_FRAMES, save=None, save_fps=None,
+                 log=None):
         # Not calling App.__init__: it expects a still image
         self.root = root
         root.title("Chess projection editor (live + pinch)")
 
+        # Chess-rule state that App.draw_board / apply / reset expect
         self.state = start_position()
-        # LiveApp does not call App.__init__, so initialise ALL chess-rule state
-        # that the updated App's draw_board/apply/reset logic expects.
         self.castling_rights = starting_castling_rights()
         self.en_passant_target = None
         self.invalid_square = None
@@ -267,6 +289,7 @@ class LiveApp(App):
         self.photo = None
         self.out_bgr = None
         self.tool = tk.StringVar(value="None")   # nothing selected: clicks do nothing
+        self._last_tool = "None"
         self.frozen = tk.BooleanVar(value=False)
         self.size = (width, height)
         self.fps = 0.0
@@ -283,16 +306,16 @@ class LiveApp(App):
         self.rec_note = ""
 
         self.build_ui()
-        tk.Checkbutton(self.root.winfo_children()[0], text="Freeze video",
+        tk.Checkbutton(self.toolbar, text="Freeze video",
                        variable=self.frozen).pack(side="left", padx=8)
-        tk.Checkbutton(self.root.winfo_children()[0], text="Record",
+        tk.Checkbutton(self.toolbar, text="Record",
                        variable=self.recording).pack(side="left")
-        tk.Checkbutton(self.root.winfo_children()[0], text="Hand occlusion",
+        tk.Checkbutton(self.toolbar, text="Hand occlusion",
                        variable=self.occlude).pack(side="left", padx=8)
 
-        self.worker = PoseWorker()
+        self.worker = PoseWorker(self.perf)
         self.worker.start()
-        self.hands = HandWorker(pinch, release, frames)
+        self.hands = HandWorker(pinch, release, frames, self.perf)
         self.hands.start()
         self.open_source(source)
         # Saving a video FILE: solve the pose in-line on every frame so the saved
@@ -379,6 +402,10 @@ class LiveApp(App):
         self.move_notice_is_error = is_error
         self.move_notice_until = time.perf_counter() + 3.0
 
+    def refresh(self):
+        """tick() redraws the video every loop, so edits only need the board redrawn."""
+        self.draw_board()
+
     def apply(self, square, button):
         """Mouse editing uses the normal App rules, with persistent feedback."""
         if square is None:
@@ -410,37 +437,13 @@ class LiveApp(App):
 
             elif event == "PINCH_RELEASE":
                 if self.held is not None and square is not None and square != self.held:
-                    source = self.held
-                    # Use exactly the same chess-rule validator as the mouse Move tool.
-                    next_state, reason = validate_move(
-                        self.state, source, square,
-                        self.castling_rights, self.en_passant_target,
-                    )
-                    if next_state is None:
-                        # Snap back: nothing in the actual board state changes.
-                        self.invalid_square = square
+                    # Same rules and bookkeeping as the mouse Move tool.
+                    # An illegal move leaves the board unchanged (snap back).
+                    description, reason = self.attempt_move(self.held, square)
+                    if description is None:
                         self.announce_move(f"Illegal pinch move: {reason}", is_error=True)
                     else:
-                        moved_piece = self.state[source]
-                        side, kind = moved_piece.split("_", 1)
-                        is_castle = kind == "King" and abs(square[1] - source[1]) == 2
-                        is_promotion = kind == "Pawn" and square[0] in (0, 7)
-
-                        # Track these for future moves, the same way App.apply does.
-                        update_castling_rights(self.castling_rights, self.state, source, square)
-                        self.en_passant_target = (
-                            ((source[0] + square[0]) // 2, source[1])
-                            if kind == "Pawn" and abs(square[0] - source[0]) == 2
-                            else None
-                        )
-                        self.state = next_state
-                        self.invalid_square = None
-                        suffix = (" (castling)" if is_castle else
-                                  " (promoted to Queen)" if is_promotion else "")
-                        self.announce_move(
-                            f"Pinch: {side} {kind} {square_name(source)} to "
-                            f"{square_name(square)}{suffix}."
-                        )
+                        self.announce_move(f"Pinch: {description}")
                 self.held = None
 
             elif event == "PINCH_CANCEL":
@@ -457,7 +460,34 @@ class LiveApp(App):
         if not landmarks:
             return None
         h, w = self.frame.shape[:2]
-        return hand_mask(landmarks, w, h)
+        t = time.perf_counter()
+        mask = hand_mask(landmarks, w, h)
+        self._mask_ms = (time.perf_counter() - t) * 1000
+        return mask
+
+    # ---------- Performance log ----------
+    def log_frame(self, draw_ms):
+        """Record this frame's stage timings and whether the pieces are projected."""
+        perf, tm, mask_ms = self.perf, self.last_timings, self._mask_ms
+        if perf is None:
+            return
+        ms = lambda key: tm[key] * 1000 if key in tm else None
+        display_ms = None
+        if tm:
+            # draw_image also resizes, PNG-encodes and draws to Tk: whatever is
+            # left after the mask and the three render stages
+            display_ms = draw_ms - (mask_ms or 0.0) - sum(tm.values()) * 1000
+            for stage in ("scene", "render", "composite"):
+                perf.add(stage, ms(stage))
+            perf.add("display", display_ms)
+        if mask_ms is not None:
+            perf.add("hand_mask", mask_ms)
+        perf.add("draw_image", draw_ms)
+        perf.frame(pose_ms=self.worker.solve_ms, hand_ms=self.hands.ms,
+                   hand_mask_ms=mask_ms, scene_ms=ms("scene"), render_ms=ms("render"),
+                   composite_ms=ms("composite"), display_ms=display_ms, draw_ms=draw_ms)
+        perf.track_visibility(self.pose is not None,
+                              self.hands.latest_landmarks() is not None)
 
     def draw_cursor(self):
         g = self.hands.latest_gesture()
@@ -483,16 +513,7 @@ class LiveApp(App):
             self.frame = frame                                  # not mirrored
             new_frame = True
             if self.sync:
-                try:
-                    pose = self.worker.tracker.solve(frame)
-                    self.pose, self.picker = pose, BoardPicker(pose)
-                    self.worker.error = ""
-                    self.worker.failures = 0
-                except Exception as exc:
-                    self.worker.failures += 1
-                    if isinstance(exc, pc.BoardLost) or self.worker.failures >= HIDE_AFTER_FAILURES:
-                        self.pose, self.picker = None, None   # no valid pose: stop drawing pieces
-                    self.worker.error = f"{type(exc).__name__}: {str(exc)[:160]}"
+                self.pose, self.picker = self.worker.solve_once(frame)
             else:
                 self.worker.submit(frame)
             self.hands.submit(frame)
@@ -502,9 +523,13 @@ class LiveApp(App):
         if not self.sync:
             self.pose, self.picker = self.worker.latest()
         self.handle_events()
+        self._mask_ms = None
+        t_draw = time.perf_counter()
         self.draw_image()
+        draw_ms = (time.perf_counter() - t_draw) * 1000
         self.draw_cursor()
         if new_frame:
+            self.log_frame(draw_ms)
             self.write_frame()
 
         now = time.perf_counter()
@@ -532,8 +557,9 @@ class LiveApp(App):
         self.close_writer()
         if hasattr(self, "cap"):
             self.cap.release()
-        pc.close_renderer()
-        self.root.destroy()
+        if self.perf is not None:
+            self.perf.close()
+        self.root.destroy()          # the renderer is closed in the __main__ finally block
 
 
 if __name__ == "__main__":
@@ -541,19 +567,23 @@ if __name__ == "__main__":
     parser.add_argument("--source", default="0", help="camera index or video file")
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument("--height", type=int, default=None)
-    parser.add_argument("--pinch", type=float, default=0.3, help="pinch close threshold")
-    parser.add_argument("--release", type=float, default=0.35, help="pinch release threshold")
-    parser.add_argument("--frames", type=int, default=3, help="frames needed to confirm a change")
+    parser.add_argument("--pinch", type=float, default=DEFAULT_PINCH, help="pinch close threshold")
+    parser.add_argument("--release", type=float, default=DEFAULT_RELEASE, help="pinch release threshold")
+    parser.add_argument("--frames", type=int, default=DEFAULT_FRAMES,
+                        help="frames needed to confirm a change")
     parser.add_argument("--save", default=None, metavar="OUT.mp4",
                         help="record the projected video to this file (a video file source is "
                              "saved in one pass, frame-accurate, then recording stops)")
     parser.add_argument("--save-fps", type=float, default=None,
                         help="fps of the saved video (default: the source file's fps, or 30)")
+    parser.add_argument("--log", default=None, metavar="PERF.csv",
+                        help="write a per-frame performance CSV (fps, stage times, pieces visible) "
+                             "and a summary with occlusion recovery times")
     args = parser.parse_args()
 
     root = tk.Tk()
     app = LiveApp(root, args.source, args.width, args.height,
-                  args.pinch, args.release, args.frames, args.save, args.save_fps)
+                  args.pinch, args.release, args.frames, args.save, args.save_fps, args.log)
     root.protocol("WM_DELETE_WINDOW", app.close)
     try:
         root.mainloop()
