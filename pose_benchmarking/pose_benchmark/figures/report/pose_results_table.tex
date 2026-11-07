@@ -1,0 +1,22 @@
+% Requires \usepackage{booktabs}
+\begin{table}[t]
+\centering
+\caption{Pose estimation results on tracker-valid observations. Photograph errors use manually annotated reference intersections withheld from internal-grid PnP fitting.}
+\label{tab:pose_results}
+\small
+\begin{tabular}{lcc}
+\toprule
+Metric & Four-corner & Internal-grid \\
+\midrule
+\multicolumn{3}{l}{\emph{Annotated photos (11, 94 points)}} \\
+Median reprojection RMSE (px) & 5.40 & 4.00 \\
+95th-percentile RMSE (px) & 12.26 & 8.68 \\
+Median RMSE (square units) & 0.078 & 0.056 \\
+\midrule
+\multicolumn{3}{l}{\emph{Tracked video frames (1,529)}} \\
+Accepted poses & 1,529/1,529 & 1,528/1,529 \\
+Median PnP time (ms) & 0.174 & 0.284 \\
+Median pose-call time (ms) & 0.534 & 0.590 \\
+\bottomrule
+\end{tabular}
+\end{table}

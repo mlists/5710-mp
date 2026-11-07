@@ -1,0 +1,770 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+import time
+
+# Chessboard geometry
+BOARD_SIZE = 8
+INNER_CORNERS_PER_SIDE = BOARD_SIZE - 1
+GRID_ANCHOR_COORDINATE = np.array([5, 5], dtype=np.float32)
+# The standard OpenCV detector fits the 7x7 internal intersections.
+GRID_COORDINATES = np.array(
+    [(x, y) for y in range(1, BOARD_SIZE) for x in range(1, BOARD_SIZE)],
+    dtype=np.float32,
+)
+
+# The fallback searches a larger 9x9 lattice, including the board perimeter.
+# Coordinates 0 and BOARD_SIZE represent the outer edge of the board.
+EXPANDED_GRID_COORDINATES = np.array(
+    [(x, y) for y in range(BOARD_SIZE + 1) for x in range(BOARD_SIZE + 1)],
+    dtype=np.float32,
+)
+BOARD_BOUNDARY_COORDINATES = np.array(
+    [[0, 0], [BOARD_SIZE, 0], [BOARD_SIZE, BOARD_SIZE], [0, BOARD_SIZE]],
+    dtype=np.float32,
+)
+
+# Homography fitting
+DEFAULT_INLIER_THRESHOLD = 10
+MIN_HOMOGRAPHY_INLIERS = 12
+HOMOGRAPHY_METHOD_DIRECT = 0
+HOMOGRAPHY_REFINEMENT_ITERATIONS = 3
+
+# Standard chessboard detector
+CHESSBOARD_FLAGS = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
+SUBPIXEL_MAX_ITERATIONS = 30
+SUBPIXEL_EPSILON = 0.001
+SUBPIXEL_WINDOW = (5, 5)
+SUBPIXEL_ZERO_ZONE = (-1, -1)
+
+# Fallback corner candidate detection
+BLUR_KERNEL_SIZE = (5, 5)
+MAX_CORNER_CANDIDATES = 700
+CORNER_QUALITY_LEVEL = 0.005
+CORNER_MIN_DISTANCE = 5
+CORNER_BLOCK_SIZE = 5
+HARRIS_K = 0.04
+CANDIDATE_SUBPIXEL_WINDOW = (4, 4)
+CANDIDATE_SUBPIXEL_MAX_ITERATIONS = 20
+CANDIDATE_SUBPIXEL_EPSILON = 0.01
+MIN_CANDIDATE_POINTS = 16
+MAX_SEARCH_POINTS = 220
+RANDOM_SEED = 7
+MAX_ANCHORS = 60
+MAX_REFINED_HYPOTHESES = 40
+NEAREST_NEIGHBOUR_SLICE_START = 1
+NEAREST_NEIGHBOUR_COUNT = 6
+MIN_GRID_STEP_LENGTH = 8
+MIN_STEP_LENGTH_RATIO = 0.65
+MAX_STEP_LENGTH_RATIO = 1.55
+MAX_ABSOLUTE_COS_ANGLE = 0.65
+INITIAL_MATCH_MIN_DISTANCE = 6
+INITIAL_MATCH_STEP_FRACTION = 0.30
+MIN_MATCHED_INTERSECTIONS = 12
+
+# Candidate scoring and geometry validation
+SCORE_RESIDUAL_PENALTY = 0.02
+MIN_ACCEPTABLE_GRID_SCORE = 50
+BOUNDARY_MARGIN_FRACTION = 0.25
+BOUNDARY_MAX_EXTENT_FACTOR = 1.25
+
+# Display settings
+BOARD_BOUNDARY_COLOR = (0, 0, 255)
+SQUARE_CENTRE_COLOR = (0, 255, 0)
+BOARD_CORNER_COLOR = (255, 0, 0)
+BOARD_BOUNDARY_THICKNESS = 3
+SQUARE_CENTRE_RADIUS = 4
+BOARD_CORNER_RADIUS = 7
+DISPLAY_FIGURE_SIZE = (12, 8)
+
+# Debug display settings (OpenCV uses BGR colour order)
+ALL_CANDIDATE_COLOR = (0, 165, 255)
+WINNING_GRID_COLOR = (255, 0, 255)
+PREDICTED_GRID_COLOR = (255, 255, 0)
+DEBUG_CANDIDATE_RADIUS = 4
+DEBUG_WINNER_RADIUS = 7
+DEBUG_PREDICTED_RADIUS = 5
+PREDICTED_GRID_THICKNESS = 1
+
+
+def load_image(image_path):
+    """Load an image and return both its BGR and grayscale versions."""
+    image = cv2.imread(image_path)
+    if image is None:
+        raise FileNotFoundError(f"Could not load image: {image_path}")
+    return image
+
+
+def fit_homography(src, dst, inlier_threshold=DEFAULT_INLIER_THRESHOLD):
+    """Fit a RANSAC homography, rejecting fits with too few inliers."""
+    homography, mask = cv2.findHomography(src, dst, cv2.RANSAC, inlier_threshold)
+    if homography is None or mask is None:
+        return None
+    if int(mask.sum()) < MIN_HOMOGRAPHY_INLIERS:
+        return None
+    return homography
+
+
+def grid_to_pixel(homography, x, y):
+    """Convert one board-grid coordinate to an image pixel coordinate."""
+    point = np.array([[[x, y]]], dtype=np.float32)
+    return cv2.perspectiveTransform(point, homography)[0, 0]
+
+
+def detect_standard_chessboard(gray, inlier_threshold):
+    """Return (homography, measured 7x7 corners) if OpenCV succeeds.
+
+    OpenCV corners are measured subpixel locations, not homography predictions.
+    """
+    found, corners = cv2.findChessboardCorners(
+        gray,
+        (INNER_CORNERS_PER_SIDE, INNER_CORNERS_PER_SIDE),
+        CHESSBOARD_FLAGS,
+    )
+    if not found:
+        return None, None
+
+    criteria = (
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+        SUBPIXEL_MAX_ITERATIONS,
+        SUBPIXEL_EPSILON,
+    )
+    corners = cv2.cornerSubPix(gray, corners, SUBPIXEL_WINDOW, SUBPIXEL_ZERO_ZONE, criteria)
+    inner = corners.reshape(INNER_CORNERS_PER_SIDE, INNER_CORNERS_PER_SIDE, 2).copy()
+    homography = fit_homography(GRID_COORDINATES, inner.reshape(-1, 2), inlier_threshold)
+    if homography is None:
+        return None, None
+    return homography, inner
+
+
+def detect_corner_candidates(gray):
+    """Detect and subpixel-refine corner candidates for the fallback search."""
+    blurred = cv2.GaussianBlur(gray, BLUR_KERNEL_SIZE, 0)
+    raw = cv2.goodFeaturesToTrack(
+        blurred,
+        maxCorners=MAX_CORNER_CANDIDATES,
+        qualityLevel=CORNER_QUALITY_LEVEL,
+        minDistance=CORNER_MIN_DISTANCE,
+        blockSize=CORNER_BLOCK_SIZE,
+        useHarrisDetector=True,
+        k=HARRIS_K,
+    )
+
+    if raw is None:
+        raise RuntimeError("No corner candidates found.")
+
+    raw = raw.reshape(-1, 1, 2).astype(np.float32)
+    criteria = (
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+        CANDIDATE_SUBPIXEL_MAX_ITERATIONS,
+        CANDIDATE_SUBPIXEL_EPSILON,
+    )
+    cv2.cornerSubPix(gray, raw, CANDIDATE_SUBPIXEL_WINDOW, SUBPIXEL_ZERO_ZONE, criteria)
+    points = raw.reshape(-1, 2)
+
+    if len(points) < MIN_CANDIDATE_POINTS:
+        raise RuntimeError("Too few distinct corner candidates.")
+
+    return points
+
+
+def limit_search_points(points):
+    """Reduce candidate count while keeping candidates spread across the image."""
+    if len(points) <= MAX_SEARCH_POINTS:
+        return points
+
+    selected = [int(np.argmax(points[:, 0] + points[:, 1]))]
+    min_dist = np.linalg.norm(points - points[selected[0]], axis=1)
+
+    while len(selected) < MAX_SEARCH_POINTS:
+        idx = int(np.argmax(min_dist))
+        selected.append(idx)
+        min_dist = np.minimum(min_dist, np.linalg.norm(points - points[idx], axis=1))
+        min_dist[selected] = -1
+
+    return points[selected]
+
+
+def greedy_match_grid_points(predicted, points, match_threshold):
+    """
+    Match predicted grid intersections to observed candidates one-to-one.
+    Uses squared distances to avoid square roots in this frequently called path.
+    Returns matched grid indices and candidate-point indices.
+    """
+    delta = predicted[:, None, :] - points[None, :, :]
+    distances_squared = np.einsum("ijk,ijk->ij", delta, delta)
+    nearest_ids = distances_squared.argmin(axis=1)
+    nearest_distances_squared = distances_squared[np.arange(len(predicted)), nearest_ids]
+
+    grid_ids = np.flatnonzero(nearest_distances_squared < match_threshold * match_threshold)
+    if grid_ids.size == 0:
+        return [], []
+
+    point_ids = nearest_ids[grid_ids]
+    # Equivalent to sorting (distance, grid_id, point_id) tuples, but avoids
+    # constructing and sorting a Python list of tuples for every hypothesis.
+    order = np.lexsort((point_ids, grid_ids, nearest_distances_squared[grid_ids]))
+
+    used_points = np.zeros(len(points), dtype=bool)
+    matched_grid_ids = []
+    matched_point_ids = []
+
+    for index in order:
+        grid_id = int(grid_ids[index])
+        point_id = int(point_ids[index])
+        if not used_points[point_id]:
+            used_points[point_id] = True
+            matched_grid_ids.append(grid_id)
+            matched_point_ids.append(point_id)
+
+    return matched_grid_ids, matched_point_ids
+
+
+def validate_projected_boundary(homography, gray_shape):
+    """Reject projected board boundaries that are non-finite or far out of frame."""
+    outer = cv2.perspectiveTransform(
+        BOARD_BOUNDARY_COORDINATES.reshape(-1, 1, 2), homography
+    ).reshape(-1, 2)
+
+    if not np.isfinite(outer).all():
+        return False
+
+    height, width = gray_shape
+    if np.any(outer[:, 0] < -BOUNDARY_MARGIN_FRACTION * width) or np.any(
+        outer[:, 0] > BOUNDARY_MAX_EXTENT_FACTOR * width
+    ):
+        return False
+    if np.any(outer[:, 1] < -BOUNDARY_MARGIN_FRACTION * height) or np.any(
+        outer[:, 1] > BOUNDARY_MAX_EXTENT_FACTOR * height
+    ):
+        return False
+
+    return True
+
+
+def apply_grid_offset(homography, offset_x, offset_y):
+    """Shift the projected grid by integer grid steps in board coordinates."""
+    translation = np.array(
+        [[1.0, 0.0, float(offset_x)], [0.0, 1.0, float(offset_y)], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+    return homography @ translation
+
+
+def find_best_grid_offset(homography, points, gray_shape, inlier_threshold, profile=False):
+    """Test the winning grid and its eight neighbouring one-cell displacements."""
+    profile_start = time.perf_counter() if profile else None
+    best_homography = homography
+    best_score = score_homography(homography, points, inlier_threshold)
+    best_offset = (0, 0)
+
+    for offset_y in (-1, 0, 1):
+        for offset_x in (-1, 0, 1):
+            if offset_x == 0 and offset_y == 0:
+                continue
+
+            candidate = apply_grid_offset(homography, offset_x, offset_y)
+            candidate = refine_grid_homography(candidate, points, inlier_threshold)
+            if candidate is None or not validate_projected_boundary(candidate, gray_shape):
+                continue
+
+            score = score_homography(candidate, points, inlier_threshold)
+            # print(f"Grid offset ({offset_x:+d}, {offset_y:+d}): score={score:.2f}")
+
+            if score > best_score:
+                best_score = score
+                best_homography = candidate
+                best_offset = (offset_x, offset_y)
+
+    # print(f"Selected grid offset: ({best_offset[0]:+d}, {best_offset[1]:+d}), score={best_score:.2f}")
+    if profile:
+        print(f"    Grid-offset search: {(time.perf_counter() - profile_start) * 1000:.2f} ms")
+    return best_homography
+
+
+def score_homography(homography, points, inlier_threshold):
+    """Score a grid while penalising unmatched intersections and incomplete lines."""
+    projected = cv2.perspectiveTransform(
+        EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), homography
+    ).reshape(-1, 2)
+
+    matched_grid_ids, matched_point_ids = greedy_match_grid_points(
+        projected, points, inlier_threshold
+    )
+    matched_count = len(matched_grid_ids)
+
+    if matched_count:
+        matched_points = points[matched_point_ids]
+        residuals = np.linalg.norm(projected[matched_grid_ids] - matched_points, axis=1)
+        residual_penalty = SCORE_RESIDUAL_PENALTY * float(residuals.sum())
+    else:
+        residual_penalty = 0.0
+
+
+    return (
+        matched_count
+        - residual_penalty
+    )
+
+
+def refine_grid_homography(candidate_homography, points, inlier_threshold):
+    """Repeatedly match the expanded grid, including its perimeter, and refit the transform."""
+    matched_grid_ids = []
+    matched_point_ids = []
+
+    for _ in range(HOMOGRAPHY_REFINEMENT_ITERATIONS):
+        projected = cv2.perspectiveTransform(
+            EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), candidate_homography
+        ).reshape(-1, 2)
+
+        matched_grid_ids, matched_point_ids = greedy_match_grid_points(
+            projected, points, inlier_threshold
+        )
+
+        if len(matched_grid_ids) < MIN_MATCHED_INTERSECTIONS:
+            break
+
+        src = np.asarray(EXPANDED_GRID_COORDINATES[matched_grid_ids], dtype=np.float32)
+        dst = np.asarray(points[matched_point_ids], dtype=np.float32)
+        refined_homography, _ = cv2.findHomography(src, dst, cv2.RANSAC, inlier_threshold)
+
+        if refined_homography is None:
+            break
+
+        candidate_homography = refined_homography
+
+    if len(matched_grid_ids) < MIN_MATCHED_INTERSECTIONS:
+        return None
+
+    return candidate_homography
+
+
+def fallback_grid_search(gray, points, inlier_threshold, profile=False):
+    """Search local grid hypotheses and return the highest-scoring homography."""
+    profile_start = time.perf_counter() if profile else None
+    points = limit_search_points(points)
+    candidate_reduction_ms = (time.perf_counter() - profile_start) * 1000 if profile else None
+
+    # Precompute squared distances; sorting by these gives the same neighbour order.
+    point_delta = points[:, None, :] - points[None, :, :]
+    pair_dist_squared = np.einsum("ijk,ijk->ij", point_delta, point_delta)
+    distance_matrix_ms = (time.perf_counter() - profile_start) * 1000 - candidate_reduction_ms if profile else None
+    hypothesis_start = time.perf_counter() if profile else None
+
+    best_score = -1
+    best_homography = None
+    best_grid_points = np.empty((0, 2), dtype=np.float32)
+    rng = np.random.default_rng(RANDOM_SEED)
+
+    # Stage 1: cheaply screen affine grid hypotheses. Keep only the strongest
+    # initial matches; defer homography fitting and iterative refinement.
+    screening_start = time.perf_counter() if profile else None
+    cheap_hypotheses = []
+    anchors_processed = 0
+    anchor_pairs_tested = 0
+    affine_match_attempts = 0
+    anchor_count = min(len(points), MAX_ANCHORS)
+    anchor_ids = rng.choice(len(points), anchor_count, replace=False)
+    grid_offsets = EXPANDED_GRID_COORDINATES - GRID_ANCHOR_COORDINATE
+
+    for anchor_id in anchor_ids:
+        anchors_processed += 1
+        anchor = points[anchor_id]
+        neighbour_limit = NEAREST_NEIGHBOUR_SLICE_START + NEAREST_NEIGHBOUR_COUNT
+        nearest_subset = np.argpartition(pair_dist_squared[anchor_id], neighbour_limit - 1)[:neighbour_limit]
+        nearest_subset = nearest_subset[np.argsort(pair_dist_squared[anchor_id, nearest_subset])]
+        neighbour_ids = nearest_subset[NEAREST_NEIGHBOUR_SLICE_START:neighbour_limit]
+        neighbours = points[neighbour_ids]
+
+        for i in range(len(neighbours)):
+            u = neighbours[i] - anchor
+            length_u = np.linalg.norm(u)
+            if length_u < MIN_GRID_STEP_LENGTH:
+                continue
+
+            for j in range(i + 1, len(neighbours)):
+                anchor_pairs_tested += 1
+                v = neighbours[j] - anchor
+                length_v = np.linalg.norm(v)
+                if length_v < MIN_GRID_STEP_LENGTH or not MIN_STEP_LENGTH_RATIO < length_u / length_v < MAX_STEP_LENGTH_RATIO:
+                    continue
+
+                cos_angle = abs(np.dot(u, v) / (length_u * length_v))
+                if cos_angle > MAX_ABSOLUTE_COS_ANGLE:
+                    continue
+
+                # A local affine approximation is sufficient for screening.
+                predicted = anchor + grid_offsets @ np.column_stack((u, v)).T
+                initial_match_threshold = max(
+                    INITIAL_MATCH_MIN_DISTANCE,
+                    INITIAL_MATCH_STEP_FRACTION * (length_u + length_v) / 2,
+                )
+                affine_match_attempts += 1
+                matched_grid_ids, matched_point_ids = greedy_match_grid_points(
+                    predicted, points, initial_match_threshold
+                )
+                if len(matched_grid_ids) < MIN_MATCHED_INTERSECTIONS:
+                    continue
+
+                residuals = np.linalg.norm(
+                    predicted[matched_grid_ids] - points[matched_point_ids], axis=1
+                )
+                cheap_score = len(matched_grid_ids) - SCORE_RESIDUAL_PENALTY * float(residuals.sum())
+                src = np.asarray(EXPANDED_GRID_COORDINATES[matched_grid_ids], dtype=np.float32)
+                dst = np.asarray(points[matched_point_ids], dtype=np.float32)
+                cheap_hypotheses.append((cheap_score, src, dst))
+
+    screening_ms = (time.perf_counter() - screening_start) * 1000 if profile else None
+
+    # A generous shortlist reduces expensive fitting/refinement while retaining
+    # a broad set of plausible candidates. Increase this if any valid boards fail.
+    sorting_start = time.perf_counter() if profile else None
+    cheap_hypotheses.sort(key=lambda item: item[0], reverse=True)
+    shortlisted = cheap_hypotheses[:MAX_REFINED_HYPOTHESES]
+    sorting_ms = (time.perf_counter() - sorting_start) * 1000 if profile else None
+
+    # Stage 2: accurately fit, refine, validate, and score only shortlisted grids.
+    fit_times = []
+    refine_times = []
+    score_times = []
+    boundary_times = []
+    winning_match_times = []
+    fit_failures = 0
+    refine_failures = 0
+    boundary_rejections = 0
+    valid_evaluations = 0
+    stage2_start = time.perf_counter() if profile else None
+    for hypothesis_index, (_, src, dst) in enumerate(shortlisted):
+        step_start = time.perf_counter() if profile else None
+        candidate_homography, _ = cv2.findHomography(src, dst, HOMOGRAPHY_METHOD_DIRECT)
+        if profile:
+            fit_times.append((time.perf_counter() - step_start) * 1000)
+        if candidate_homography is None:
+            fit_failures += 1
+            continue
+
+        step_start = time.perf_counter() if profile else None
+        candidate_homography = refine_grid_homography(candidate_homography, points, inlier_threshold)
+        if profile:
+            refine_times.append((time.perf_counter() - step_start) * 1000)
+        if candidate_homography is None:
+            refine_failures += 1
+            continue
+
+        step_start = time.perf_counter() if profile else None
+        score = score_homography(candidate_homography, points, inlier_threshold)
+        if profile:
+            score_times.append((time.perf_counter() - step_start) * 1000)
+
+        step_start = time.perf_counter() if profile else None
+        boundary_valid = validate_projected_boundary(candidate_homography, gray.shape)
+        if profile:
+            boundary_times.append((time.perf_counter() - step_start) * 1000)
+        if not boundary_valid:
+            boundary_rejections += 1
+            continue
+        valid_evaluations += 1
+
+        if score > best_score:
+            best_score = score
+            best_homography = candidate_homography
+            step_start = time.perf_counter() if profile else None
+            projected = cv2.perspectiveTransform(EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), candidate_homography).reshape(-1, 2)
+            _, winning_point_ids = greedy_match_grid_points(projected, points, inlier_threshold)
+            best_grid_points = points[winning_point_ids].copy()
+            if profile:
+                winning_match_times.append((time.perf_counter() - step_start) * 1000)
+
+    stage2_ms = (time.perf_counter() - stage2_start) * 1000 if profile else None
+
+    if profile:
+        def print_timing_summary(label, values):
+            if not values:
+                print(f"    {label}: no successful samples")
+                return
+            arr = np.asarray(values, dtype=np.float64)
+            print(f"    {label}: total={arr.sum():.2f} ms, mean={arr.mean():.3f} ms, median={np.median(arr):.3f} ms, max={arr.max():.3f} ms, n={len(arr)}")
+
+        print(f"    Anchors processed: {anchors_processed}/{anchor_count}")
+        print(f"    Anchor pairs tested: {anchor_pairs_tested}")
+        print(f"    Affine grid-match attempts: {affine_match_attempts}")
+        print(f"    Cheap hypotheses generated: {len(cheap_hypotheses)}")
+        print(f"    Stage 1 affine screening: {screening_ms:.2f} ms")
+        print(f"    Hypothesis sorting/shortlisting: {sorting_ms:.2f} ms")
+        print(f"    Hypotheses evaluated in Stage 2: {len(shortlisted)} (limit {MAX_REFINED_HYPOTHESES})")
+        print(f"    Stage 2 total: {stage2_ms:.2f} ms")
+        print(f"    Stage 2 outcomes: fit failures={fit_failures}, refinement failures={refine_failures}, boundary rejections={boundary_rejections}, valid={valid_evaluations}")
+        print_timing_summary("Direct homography fit per hypothesis", fit_times)
+        print_timing_summary("Iterative refinement per hypothesis", refine_times)
+        print_timing_summary("Scoring per hypothesis", score_times)
+        print_timing_summary("Boundary validation per hypothesis", boundary_times)
+        print_timing_summary("Extra match extraction when a new best is found", winning_match_times)
+
+    if best_homography is None or best_score < MIN_ACCEPTABLE_GRID_SCORE:
+        raise RuntimeError(
+            "Could not fit a reliable chessboard grid. "
+            "Try increasing candidate detection sensitivity or checking image quality."
+        )
+
+    # The best-scoring grid may still be displaced by one complete square.
+    # Test all neighbouring offsets before returning the final homography.
+    hypothesis_search_ms = (time.perf_counter() - hypothesis_start) * 1000 if profile else None
+    best_homography = find_best_grid_offset(
+        best_homography, points, gray.shape, inlier_threshold, profile=profile
+    )
+
+    # Refresh the matched-corner set for the selected offset.
+    projected = cv2.perspectiveTransform(
+        EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), best_homography
+    ).reshape(-1, 2)
+    _, winning_point_ids = greedy_match_grid_points(projected, points, inlier_threshold)
+    best_grid_points = points[winning_point_ids].copy()
+
+    if profile:
+        print(f"    Candidate reduction: {candidate_reduction_ms:.2f} ms")
+        print(f"    Pairwise distance matrix: {distance_matrix_ms:.2f} ms")
+        print(f"    Search through Stage 2 (excluding grid-offset search): {hypothesis_search_ms:.2f} ms")
+        print(f"    Fallback total: {(time.perf_counter() - profile_start) * 1000:.2f} ms")
+
+    return best_homography, best_grid_points
+
+
+def calculate_board_coordinates(homography):
+    """Calculate the four outer corners and all 64 square centres."""
+    board_corners = np.array(
+        [
+            grid_to_pixel(homography, 0, 0),
+            grid_to_pixel(homography, BOARD_SIZE, 0),
+            grid_to_pixel(homography, BOARD_SIZE, BOARD_SIZE),
+            grid_to_pixel(homography, 0, BOARD_SIZE),
+        ],
+        dtype=np.float32,
+    )
+
+    square_centres = np.array(
+        [
+            [grid_to_pixel(homography, col + 0.5, row + 0.5) for col in range(BOARD_SIZE)]
+            for row in range(BOARD_SIZE)
+        ],
+        dtype=np.float32,
+    )
+
+    return square_centres, board_corners
+
+
+def extract_measured_internal_corners(homography, candidate_points, inlier_threshold):
+    """Associate candidate points with internal grid coordinates."""
+    inner = np.full(
+        (INNER_CORNERS_PER_SIDE, INNER_CORNERS_PER_SIDE, 2),
+        np.nan,
+        dtype=np.float32,
+    )
+    if candidate_points is None or len(candidate_points) == 0:
+        return inner
+
+    projected = cv2.perspectiveTransform(
+        GRID_COORDINATES.reshape(-1, 1, 2), homography
+    ).reshape(-1, 2)
+    grid_ids, point_ids = greedy_match_grid_points(
+        projected, candidate_points, inlier_threshold
+    )
+    if grid_ids:
+        inner.reshape(-1, 2)[grid_ids] = candidate_points[point_ids]
+    return inner
+
+
+def display_detection(image, video_mode, square_centres, board_corners):
+    """Draw the detected board boundary, square centres, and outer corners."""
+    display = image.copy()
+    cv2.polylines(
+        display,
+        [np.round(board_corners).astype(np.int32)],
+        True,
+        BOARD_BOUNDARY_COLOR,
+        BOARD_BOUNDARY_THICKNESS,
+    )
+
+    for row in range(BOARD_SIZE):
+        for col in range(BOARD_SIZE):
+            x, y = np.round(square_centres[row, col]).astype(int)
+            cv2.circle(display, (x, y), SQUARE_CENTRE_RADIUS, SQUARE_CENTRE_COLOR, -1)
+
+    for x, y in np.round(board_corners).astype(int):
+        cv2.circle(display, (x, y), BOARD_CORNER_RADIUS, BOARD_CORNER_COLOR, -1)
+
+    if video_mode:
+        cv2.imshow("Chessboard corners and square centres", display)
+    else:
+        plt.figure(figsize=DISPLAY_FIGURE_SIZE)
+        plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        plt.title("Chessboard corners and square centres")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
+
+
+def display_corner_debug(image, video_mode, all_candidates, winning_grid_points, homography):
+    """Show candidates, matched corners, and all homography-predicted grid intersections."""
+    display = image.copy()
+    height, width = image.shape[:2]
+    projected = cv2.perspectiveTransform(
+        EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), homography
+    ).reshape(-1, 2)
+    projected_grid = projected.reshape(BOARD_SIZE + 1, BOARD_SIZE + 1, 2)
+
+    # Draw the predicted 9x9 lattice first so detections remain visible over it.
+    for row in range(BOARD_SIZE + 1):
+        line = np.round(projected_grid[row]).astype(np.int32).reshape(-1, 1, 2)
+        cv2.polylines(display, [line], False, PREDICTED_GRID_COLOR, PREDICTED_GRID_THICKNESS)
+    for col in range(BOARD_SIZE + 1):
+        line = np.round(projected_grid[:, col]).astype(np.int32).reshape(-1, 1, 2)
+        cv2.polylines(display, [line], False, PREDICTED_GRID_COLOR, PREDICTED_GRID_THICKNESS)
+
+    # Draw all detected corner candidates.
+    for x, y in np.round(all_candidates).astype(int):
+        if 0 <= x < width and 0 <= y < height:
+            cv2.circle(display, (x, y), DEBUG_CANDIDATE_RADIUS, ALL_CANDIDATE_COLOR, -1)
+
+    # Mark every predicted intersection, including locations with no detected corner.
+    for x, y in np.round(projected).astype(int):
+        if 0 <= x < width and 0 <= y < height:
+            cv2.circle(display, (x, y), DEBUG_PREDICTED_RADIUS, PREDICTED_GRID_COLOR, 1)
+
+    # Highlight observed candidates assigned to the winning grid.
+    for x, y in np.round(winning_grid_points).astype(int):
+        if 0 <= x < width and 0 <= y < height:
+            cv2.circle(display, (x, y), DEBUG_WINNER_RADIUS, WINNING_GRID_COLOR, 2)
+
+    if video_mode:
+        cv2.imshow("Debug: predicted grid (cyan), candidates (orange), matched points (magenta)", display)
+    else:
+        plt.figure(figsize=DISPLAY_FIGURE_SIZE)
+        plt.imshow(cv2.cvtColor(display, cv2.COLOR_BGR2RGB))
+        plt.title("Debug: predicted grid (cyan), candidates (orange), matched points (magenta)")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
+
+def detect_chessboard(
+    image,
+    video_mode=False,
+    display_output=False,
+    inlier_threshold=DEFAULT_INLIER_THRESHOLD,
+    display_debug=False,
+    profile=False,
+    use_standard_detector=False,
+):
+    """Detect an 8x8 chessboard and return geometry plus MEASURED intersections.
+
+    Args:
+        image: BGR image array (not an image path).
+        video_mode: Use OpenCV display rather than matplotlib when displaying.
+        display_output: Overlay projected board boundary and square centres.
+        inlier_threshold: Pixel matching threshold for homography and fallback.
+        display_debug: Show candidate points and projected 9x9 lattice.
+        profile: Print detector stage timings. Does not enable display.
+        use_standard_detector: If True, try cv2.findChessboardCorners first,
+            then use the custom occlusion-tolerant fallback. Defaults False to
+            preserve the optimized fallback-only behaviour of the fast version.
+
+    Returns:
+        square_centres: (8,8,2) image pixels, PROJECTED from homography.
+        board_corners: (4,2) image pixels, PROJECTED, TL/TR/BR/BL in grid order.
+        inner: (7,7,2) image pixels, MEASURED and indexed by [row,col].
+            Unmatched/occluded intersections are [NaN, NaN], not projections.
+
+    Important:
+        This module cannot resolve the 8x8 board's physical orientation from
+        symmetric checkerboard geometry alone. The corner index convention may
+        change after re-detection in video.
+    """
+    profile_start = time.perf_counter() if profile else None
+    stage_times = {}
+
+    stage_start = time.perf_counter() if profile else None
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if profile:
+        stage_times["Grayscale conversion"] = (time.perf_counter() - stage_start) * 1000
+
+    # The performance-optimized input version deliberately skipped the full
+    # checkerboard detector. Preserve that default, but allow opting in.
+    homography = None
+    inner = None
+    all_candidates = None
+    winning_grid_points = None
+
+    if use_standard_detector:
+        stage_start = time.perf_counter() if profile else None
+        homography, inner = detect_standard_chessboard(gray, inlier_threshold)
+        if profile:
+            stage_times["Standard chessboard detection"] = (time.perf_counter() - stage_start) * 1000
+
+    if homography is None:
+        # Candidate detection runs exactly once on the fallback path.
+        stage_start = time.perf_counter() if profile else None
+        all_candidates = detect_corner_candidates(gray)
+        if profile:
+            stage_times["Candidate detection and subpixel refinement"] = (
+                time.perf_counter() - stage_start
+            ) * 1000
+
+        stage_start = time.perf_counter() if profile else None
+        homography, winning_grid_points = fallback_grid_search(
+            gray, all_candidates, inlier_threshold, profile=profile
+        )
+        if profile:
+            stage_times["Fallback grid search (inclusive)"] = (
+                time.perf_counter() - stage_start
+            ) * 1000
+
+        # Reuse existing candidate points; do not run another detector or
+        # substitute the predicted lattice for genuinely measured points.
+        stage_start = time.perf_counter() if profile else None
+        inner = extract_measured_internal_corners(
+            homography, all_candidates, inlier_threshold
+        )
+        if profile:
+            stage_times["Measured corner association"] = (
+                time.perf_counter() - stage_start
+            ) * 1000
+
+    stage_start = time.perf_counter() if profile else None
+    square_centres, board_corners = calculate_board_coordinates(homography)
+    if profile:
+        stage_times["Coordinate calculation"] = (time.perf_counter() - stage_start) * 1000
+
+    if display_output:
+        display_detection(image, video_mode, square_centres, board_corners)
+
+    if display_debug:
+        debug_start = time.perf_counter() if profile else None
+        if all_candidates is None:
+            # Only required when the standard OpenCV path was used.
+            all_candidates = detect_corner_candidates(gray)
+        if winning_grid_points is None:
+            # Standard branch: use the measured, indexed intersections.
+            winning_grid_points = inner[np.isfinite(inner).all(axis=2)]
+        display_corner_debug(image, video_mode, all_candidates,
+                             winning_grid_points, homography)
+        if profile:
+            stage_times["Debug display and any extra candidate detection"] = (
+                time.perf_counter() - debug_start
+            ) * 1000
+
+    if profile:
+        stage_times["Total detection call"] = (time.perf_counter() - profile_start) * 1000
+        print("\nDetection profile:")
+        for stage, elapsed_ms in stage_times.items():
+            print(f"  {stage}: {elapsed_ms:.2f} ms")
+        print(f"  Measured internal intersections: {np.isfinite(inner).all(axis=2).sum()}/49")
+
+    return square_centres, board_corners, inner
+
+
+if __name__ == "__main__":
+    # Note image #5 fails but the image is pretty unreasonable
+    image = load_image(r"occluded-photos\9.jpg")
+    s = time.time()
+    centres, corners, inner = detect_chessboard(image, video_mode=False, display_output=True, display_debug=False, profile=True)
+    print((time.time() - s) * 1e3, "ms")

@@ -1,0 +1,19 @@
+% Results only. Keep causal interpretation in Discussion.
+\subsection{Pose Estimation}
+Of the 18 photographs, valid tracker geometry was obtained for 11
+(6 unobstructed and 5 partially occluded), providing 94 manually annotated
+reference intersections. Both PnP methods returned accepted poses for all
+11 photographs. The internal-grid method achieved lower reprojection RMSE
+on 11 of 11 paired photographs, with a median of 4.00 pixels
+(0.056 squares), compared with 5.40 pixels (0.078 squares)
+for the four-corner method. The corresponding 95th-percentile errors were
+8.68 and 12.26 pixels, respectively (Table~\ref{tab:pose_results};
+Fig.~\ref{fig:pose_comparison}).
+
+Across the three video sequences, 1,529 of 1,759 frames provided valid
+tracker geometry. Four-corner PnP produced accepted poses in
+1,529/1,529 eligible frames, compared with 1,528/1,529
+for internal-grid PnP. Median PnP solver times were 0.174 and
+0.284~ms, respectively, while the median pose-call times were
+0.534 and 0.590~ms.
+Figure~\ref{fig:pose_example} shows the four-corner pose projected onto a representative webcam image.
