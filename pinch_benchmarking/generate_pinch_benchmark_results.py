@@ -1,25 +1,3 @@
-#!/usr/bin/env python3
-"""Create publication-ready figures and LaTeX tables for the AR chess pinch benchmark.
-
-Default source: the verified numerical SUMMARY (6 Nov 2026) in
-'Pinch_Gesture_Report_Handover_REDOWNLOAD(1).docx'. These data are embedded
-below, allowing this script to run without the unavailable source CSVs/videos.
-
-Optional: --session2-dir PATH reads selected evaluator CSVs and recomputes
-figures wherever the schema can be recognised. A provenance log records which
-values came from CSVs versus the handover. Use --strict-csv to require all
-expected source tables to be parsed. Without the CSVs, do not describe the
-figures as newly recomputed from raw data.
-
-Usage:
-    python generate_pinch_benchmark_results.py --out pinch_results
-    python generate_pinch_benchmark_results.py --session2-dir /path/session02 --out pinch_results
-    python generate_pinch_benchmark_results.py --videos /path/to/videos --out pinch_results
-    python generate_pinch_benchmark_results.py --data-json pinch_benchmark_data.json --out pinch_results
-
-Dependencies: numpy, matplotlib, pandas. OpenCV is optional for video contact sheets.
-"""
-
 from __future__ import annotations
 
 import argparse

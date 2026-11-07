@@ -1,14 +1,5 @@
 """Interactive, READ-ONLY comparison of human annotations and detector decisions.
 
-Place beside pinch_benchmark_annotate.py and run from the benchmark folder:
-    python pinch_review_unmatched.py --session session02 --clip-id interaction_virtual_piece_move_01
-    python pinch_review_unmatched.py --session session02 --clip-id negative_fist_fast_transition_01
-    python pinch_review_unmatched.py --session session02 --list-only
-
-The viewer uses the existing session files and NEVER changes the annotations,
-benchmark results, model, or saved raw videos. The two timestamped lanes in the
-bottom timeline show the entire clip's ground truth and detector predictions.
-
 Keys (press inside the OpenCV window):
     n/p : next/previous unmatched event (FP/FN)
     t   : toggle navigation between unmatched events and ALL matched/unmatched events
