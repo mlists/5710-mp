@@ -11,6 +11,12 @@ import time
 
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from get_pose import (get_inner_pnp_pose, get_undistorted_h_pose,
+                      get_undistorted_h_refined_pose)
 
 # Shares ONLY the input pipeline, reference annotation metric and I/O helpers.
 import benchmark_pose as bm
@@ -97,14 +103,12 @@ def solve_methods(tracker, calibration, pipeline, args, manual=None, order_index
     Rotate the evaluation order across samples to reduce systematic
     first-call/warm-cache bias in per-method solver timing.
     """
-    from get_pose_v7 import (get_inner_pnp_pose, get_undistorted_h_pose,
-                             get_undistorted_h_refined_pose)
     if tracker is None or not bool(tracker.tracking_ok):
         return {m: (pipeline.pose_result_class(reason="Tracker unavailable"), None, float("nan"))
                 for m in args.methods}
     holdout = manual or {}
     inner_source = raw_inner_without_labels(tracker, holdout) if holdout else tracker
-    # The original get_pose_v6 and v7 methods use the same 3D board convention.
+    # The original pose methods use the same 3D board convention.
     # In relative mode, bypass their legacy pixel gate before applying the
     # same perspective-aware fraction-of-square acceptance to ALL methods.
     solver_px_gate = (args.max_corner_error if args.pose_gate == "pixels" else 1_000_000.0)
@@ -365,9 +369,6 @@ def paired_photos(rows):
 
 def plot_results(args, images, videos, pairs):
     if args.no_figures:return
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     target=args.data_dir/"figures/methods"
     target.mkdir(parents=True,exist_ok=True)
     if pairs:
@@ -413,12 +414,6 @@ def main(argv=None):
     bm.folders(args)
     pipe=bm.load_pipeline()
     calib=pipe.load_calibration(args.calibration)
-    # Make all experiment methods available in main project (legacy v7 module).
-    try:
-        import get_pose_v7
-    except ModuleNotFoundError as ex:
-        raise RuntimeError("Place the existing get_pose_v7.py beside benchmark_pose_methods.py "
-                           "to benchmark the original internal-grid PnP implementation.") from ex
     labels=bm.load_manual_points(args.data_dir)
     intervals=bm.load_occlusion_intervals(args.data_dir) if args.mode in ("all","videos") else {}
     print("Methods:",", ".join(args.methods),"; calibration:",args.calibration)

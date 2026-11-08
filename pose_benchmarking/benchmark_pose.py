@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
-import importlib
 import math
 from pathlib import Path
 import sys
@@ -20,6 +19,14 @@ from types import SimpleNamespace
 
 import cv2
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+import find_board
+import board_tracker
+import get_pose
+import pose_quality
 
 BOARD_N = 8
 SQUARE_M = 0.057
@@ -79,29 +86,10 @@ class Pipeline:
 
 
 def load_pipeline() -> Pipeline:
-    """Import project implementation lazily, so annotation works without it."""
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
-    try:
-        detector = importlib.import_module("find_board")
-        tracker_mod = importlib.import_module("board_tracker_v2")
-        pose_mod = importlib.import_module("get_pose_v6")
-        try:
-            quality = importlib.import_module("pose_quality_v8")
-        except ModuleNotFoundError as exc:
-            if exc.name != "pose_quality_v8":
-                raise
-            quality = importlib.import_module("pose_quality")
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            f"Missing project module {exc.name!r}. Copy benchmark_pose.py into your main "
-            "project folder beside find_board.py, board_tracker.py, board_tracker_v2.py, "
-            "get_pose_v6.py and pose_quality_v8.py (or pose_quality.py)."
-        ) from exc
     return Pipeline(
-        detector.detect_chessboard, tracker_mod.BoardTracker,
-        pose_mod.get_board_pose, pose_mod.load_calibration, pose_mod.PoseResult,
-        quality.evaluate_corner_gate, pose_mod.object_outer_corners,
+        find_board.detect_chessboard, board_tracker.BoardTracker,
+        get_pose.get_board_pose, get_pose.load_calibration, get_pose.PoseResult,
+        pose_quality.evaluate_corner_gate, get_pose.object_outer_corners,
     )
 
 
@@ -577,9 +565,6 @@ def summary_rows(image_rows, video_rows, recovery):
 def plot_figures(a, image_rows, video_rows, intervals):
     if a.no_figures:
         return
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
     # One concise photograph figure. Withheld human labels take precedence;
     # otherwise plainly label the chart as in-sample PnP fit, not accuracy.
@@ -684,9 +669,6 @@ def synthetic_study(a, pipe, calib):
                               "solved_pct": 100*np.mean([r["solved"] for r in rr])})
     write_csv(a.data_dir / "results/synthetic_summary.csv", aggregate, list(aggregate[0]))
     if not a.no_figures:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=(7.8, 4.3))
         for tilt in (0, 20, 40):
             rr = [r for r in aggregate if r["view_tilt_deg"] == tilt]

@@ -6,6 +6,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+import benchmark_pose as bm
+import benchmark_pose_methods as methods
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +150,6 @@ def plot_runtime(ax, summary):
 
 
 def create_charts(pairs, summary, destination):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
     # Same neutral plot styling as the gesture results.
     plt.rcParams.update({
@@ -189,7 +193,6 @@ def create_charts(pairs, summary, destination):
 
 def draw_pose_panel(frame, tracker, pose, title):
     """Draw measured tracker outline, fitted pose outline and 3D axes on RAW pixels."""
-    import cv2
 
     image = frame.copy()
     outer = np.asarray(tracker.board_corners, dtype=float).reshape(4, 2)
@@ -226,13 +229,6 @@ def draw_pose_panel(frame, tracker, pose, title):
 
 def create_overlay(project_root, data_dir, calibration_file, example, outdir,
                    square_size, gate_squares):
-    import cv2
-    import sys
-
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    import benchmark_pose as bm
-    import benchmark_pose_methods as methods
 
     path = Path(example)
     if not path.is_absolute():
