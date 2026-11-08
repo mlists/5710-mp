@@ -12,7 +12,7 @@ import numpy as np
 
 import find_board
 from pose_quality import evaluate_corner_gate
-from board_tracker_v2 import BoardTracker
+from board_tracker import BoardTracker
 from get_pose import PoseResult, get_board_pose, load_calibration
 
 

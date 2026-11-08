@@ -9,7 +9,7 @@ import trimesh
 import pyrender
 
 import find_board
-from board_tracker_v2 import BoardTracker
+from board_tracker import BoardTracker
 from get_pose import get_board_pose
 from pose_quality import evaluate_corner_gate
 
