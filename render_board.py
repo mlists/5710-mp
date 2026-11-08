@@ -19,18 +19,18 @@ BAKED_DIR = os.path.join(BASE, "Chess_models", "_baked")
 OUT_PATH = os.path.join(BASE, "Augmented_Boards")
 
 MODEL_PATHS = {
-    "Black_Pawn" : os.path.join(BASE, "Chess_models", "Pawn_Black.obj"),
-    "White_Pawn" : os.path.join(BASE, "Chess_models", "Pawn_white.obj"),
-    "Black_Bishop" : os.path.join(BASE, "Chess_models", "Bishop_Black.obj"),
-    "White_Bishop" : os.path.join(BASE, "Chess_models", "Bishop_White.obj"),
-    "Black_Knight" : os.path.join(BASE, "Chess_models", "Knight_Black.obj"),
-    "White_Knight" : os.path.join(BASE, "Chess_models", "Knight_White.obj"),
-    "Black_Rook" : os.path.join(BASE, "Chess_models", "Rook_Black.obj"),
-    "White_Rook" : os.path.join(BASE, "Chess_models", "Rook_White.obj"),
-    "Black_Queen" : os.path.join(BASE, "Chess_models", "Queen_Black.obj"),
-    "White_Queen" : os.path.join(BASE, "Chess_models", "Queen_White.obj"),
-    "Black_King" : os.path.join(BASE, "Chess_models", "King_Black.obj"),
-    "White_King" : os.path.join(BASE, "Chess_models", "King_White.obj"),
+    "Black_Pawn" : os.path.join(BASE, "chess_models", "Pawn_Black.obj"),
+    "White_Pawn" : os.path.join(BASE, "chess_models", "Pawn_white.obj"),
+    "Black_Bishop" : os.path.join(BASE, "chess_models", "Bishop_Black.obj"),
+    "White_Bishop" : os.path.join(BASE, "chess_models", "Bishop_White.obj"),
+    "Black_Knight" : os.path.join(BASE, "chess_models", "Knight_Black.obj"),
+    "White_Knight" : os.path.join(BASE, "chess_models", "Knight_White.obj"),
+    "Black_Rook" : os.path.join(BASE, "chess_models", "Rook_Black.obj"),
+    "White_Rook" : os.path.join(BASE, "chess_models", "Rook_White.obj"),
+    "Black_Queen" : os.path.join(BASE, "chess_models", "Queen_Black.obj"),
+    "White_Queen" : os.path.join(BASE, "chess_models", "Queen_White.obj"),
+    "Black_King" : os.path.join(BASE, "chess_models", "King_Black.obj"),
+    "White_King" : os.path.join(BASE, "chess_models", "King_White.obj"),
 }
 
 # =============== Constants ===============
