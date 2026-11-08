@@ -18,8 +18,8 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
-import real_board_scene as pc
-from real_gui import (
+import render_board as pc
+from game_gui import (
     App, BoardPicker, start_position,
     starting_castling_rights, validate_move, update_castling_rights, square_name,
 )

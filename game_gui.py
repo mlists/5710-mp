@@ -7,7 +7,7 @@ from tkinter import filedialog, messagebox
 import cv2
 import numpy as np
 
-import real_board_scene as pc
+import render_board as pc
 
 # =============== Constants ===============
 SQ = 70

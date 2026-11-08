@@ -225,7 +225,7 @@ def _solve_pose(result):
 
 
 def estimate_pose(board_rgb):
-    """One-shot pose from a single still image (used by real_gui)"""
+    """One-shot pose from a single still image"""
     # Convert to correct coour and finds and tracks board
     bgr = cv2.cvtColor(np.rint(np.clip(board_rgb, 0, 1) * 255).astype(np.uint8),
                        cv2.COLOR_RGB2BGR)
