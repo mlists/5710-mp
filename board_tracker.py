@@ -310,7 +310,7 @@ class BoardTracker:
         corner ordering after it has been run again.
         """
         if self._orientation_gray is None:
-                    raise RuntimeError("Current detection frame is not available")
+            raise RuntimeError("Current detection frame is not available")
         predicted = self._project_grid(self.homography, np.array(
             [[0, 0], [8, 0], [8, 8], [0, 8]], dtype=np.float32
         ))
@@ -454,6 +454,7 @@ class BoardTracker:
         gray = self._as_gray(frame)
 
         if detection is not None:
+            self._orientation_gray = gray
             self._align_redetection(detection)
             self.previous_gray = gray.copy()
             self.last_tracking_ok = True
