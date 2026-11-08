@@ -1,10 +1,6 @@
-"""Live video chess projection editor with pinch (hand) control.
-
-Pinch over a piece to pick it up, move your hand, release over a square to drop it.
-Mouse editing still works as before.
-
-    python chess_live.py
-    python chess_live.py --source 1 --frames 2
+"""
+    Main program file. Can run from a camera stream or recorded video. Pinch and
+    GUI controls are both avaliable. Example usage: python main.py --source 0 --width 1280 --height 720
 """
 import argparse
 import threading
