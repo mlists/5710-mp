@@ -1,20 +1,4 @@
-"""One-source, two-panel orientation-safe runner with scale-normalized pose acceptance.
-
-The detector and optical flow are original; board_tracker_v2 validates corner association.
-The solvePnP implementation stays in get_pose_v6.py. A post-solve acceptance
-rule normalizes corner errors by the local, perspective-projected square pitch.
-The legacy absolute-pixel gate remains selectable with --pose-gate pixels.
-Panels are rendered from the SAME unmodified source frame, after tracking.
-No resize, crop, colour correction or overlay is passed to either algorithm.
-
-Examples:
-  python find_board_video_v8.py --webcam 0 --calibration cal_data.pkl
-  python find_board_video_v8.py --source input.mp4 --calibration cal_data.pkl
-  python find_board_video_v8.py --source input.mp4 --no-display --csv result.csv
-
-Run from the directory containing byte-identical find_board.py, board_tracker.py, board_tracker_v2.py,
-get_pose_v6.py, and a calibration matching the original recording.
-"""
+"""Debug file to run the detector, tracker and pose estimator """
 
 from __future__ import annotations
 
@@ -29,7 +13,7 @@ import numpy as np
 import find_board
 from pose_quality import evaluate_corner_gate
 from board_tracker_v2 import BoardTracker
-from get_pose_v6 import PoseResult, get_board_pose, load_calibration
+from get_pose import PoseResult, get_board_pose, load_calibration
 
 
 WINDOW = "Chessboard v8 | ORIENTED TRACKING (left) / RAW v6 POSE (right)"

@@ -10,7 +10,7 @@ import pyrender
 
 import find_board
 from board_tracker_v2 import BoardTracker
-from get_pose_v6 import get_board_pose
+from get_pose import get_board_pose
 from pose_quality import evaluate_corner_gate
 
 # =============== Paths ===============
