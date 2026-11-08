@@ -328,7 +328,7 @@ def annotate_images(image_paths, annotation_file):
         if action == "skip":
             continue
 
-        annotations[os.path.abspath(image_path)] = points
+        annotations[image_path] = points
         save_annotations(annotation_file, annotations)
 
         print(f"Saved annotations for {image_path}")
@@ -394,12 +394,12 @@ def evaluate_images(image_paths, annotation_file, max_distance=5.0):
 
     results = []
     index = 0
+    failed_detections = 0
 
     while 0 <= index < len(image_paths):
         image_path = image_paths[index]
-        absolute_path = os.path.abspath(image_path)
 
-        if absolute_path not in annotations:
+        if image_path not in annotations:
             print(f"No annotation found for {image_path}")
             index += 1
             continue
@@ -410,7 +410,7 @@ def evaluate_images(image_paths, annotation_file, max_distance=5.0):
             index += 1
             continue
 
-        manual = np.asarray(annotations[absolute_path], dtype=np.float32)
+        manual = np.asarray(annotations[image_path], dtype=np.float32)
 
         try:
             _, detected, _ = detect_chessboard(
@@ -450,6 +450,7 @@ def evaluate_images(image_paths, annotation_file, max_distance=5.0):
                 display, "DETECTION FAILED", (20, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2
             )
+            failed_detections += 1
 
         cv2.imshow("Corner evaluation", display)
 
@@ -469,6 +470,8 @@ def evaluate_images(image_paths, annotation_file, max_distance=5.0):
         results = np.asarray(results)
 
         print("\n===== Overall results =====")
+        print(f"Detections:   {index-failed_detections+1}/{index+1}")
+        print("=== Of Successful Detections ===")
         print(f"Mean error:   {np.mean(results):.2f}px")
         print(f"Median error: {np.median(results):.2f}px")
         print(f"Max error:    {np.max(results):.2f}px")
