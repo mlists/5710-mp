@@ -315,7 +315,7 @@ class App:
         top.pack(side="top", fill="x", padx=6, pady=4)
         self.toolbar = top            
 
-        tk.Button(top, text="Open image", command=self.open_image).pack(side="left")
+        tk.Button(top, text="Open file", command=self.open_image).pack(side="left")
         tk.Button(top, text="Reset", command=self.reset).pack(side="left", padx=4)
         tk.Button(top, text="Clear", command=self.clear).pack(side="left")
         tk.Button(top, text="Save image", command=self.save_image).pack(side="left", padx=4)
