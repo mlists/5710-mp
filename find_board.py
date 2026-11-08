@@ -284,7 +284,7 @@ def find_best_grid_offset(homography, points, gray_shape, inlier_threshold, prof
 
 
 def score_homography(homography, points, inlier_threshold):
-    """Score a grid while penalising ditance between prediction and observation"""
+    """Score a grid while penalising unmatched intersections and incomplete lines."""
     projected = cv2.perspectiveTransform(
         EXPANDED_GRID_COORDINATES.reshape(-1, 1, 2), homography
     ).reshape(-1, 2)
@@ -504,7 +504,6 @@ def fallback_grid_search(gray, points, inlier_threshold, profile=False):
     if best_homography is None or best_score < MIN_ACCEPTABLE_GRID_SCORE:
         raise RuntimeError(
             "Could not fit a reliable chessboard grid. "
-            "Try increasing candidate detection sensitivity or checking image quality."
         )
 
     # The best-scoring grid may still be displaced by one complete square.
@@ -762,10 +761,9 @@ def detect_chessboard(
     return square_centres, board_corners, inner
 
 
-# If this file is run directly, run on a test image
 if __name__ == "__main__":
     # Note image #5 fails but the image is pretty unreasonable
-    image = load_image(r"images\occluded\5.jpg")
+    image = load_image(r"occluded-photos\9.jpg")
     s = time.time()
-    centres, corners, inner = detect_chessboard(image, video_mode=False, display_output=True, display_debug=True, profile=True)
+    centres, corners, inner = detect_chessboard(image, video_mode=False, display_output=True, display_debug=False, profile=True)
     print((time.time() - s) * 1e3, "ms")

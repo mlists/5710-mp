@@ -313,11 +313,15 @@ class LiveApp(App):
         tk.Checkbutton(self.toolbar, text="Hand occlusion",
                        variable=self.occlude).pack(side="left", padx=8)
 
+        self.perf = None
+
         self.worker = PoseWorker(self.perf)
         self.worker.start()
         self.hands = HandWorker(pinch, release, frames, self.perf)
         self.hands.start()
+        print("Started opening source")
         self.open_source(source)
+        print("Finished opening source")
         # Saving a video FILE: solve the pose in-line on every frame so the saved
         # overlay is frame-accurate (slower than real time, but nothing lags).
         self.sync = bool(save) and getattr(self, "is_file", False)

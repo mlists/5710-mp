@@ -62,7 +62,10 @@ class PinchDetector:
             points.append((landmark.x * width, landmark.y * height))
 
         palm = max(distance(points[WRIST], points[MIDDLE_BASE]),
-                   distance(points[INDEX_BASE], points[PINKY_BASE]), 1.0)
+                   distance(points[INDEX_BASE], points[PINKY_BASE]))
+        if palm < 1.0:
+            return None
+
         raw_ratio = distance(points[THUMB], points[INDEX]) / palm
 
         if self.ratio is None:
